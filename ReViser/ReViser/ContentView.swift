@@ -10,9 +10,17 @@ import RealityKit
 import RealityKitContent
 
 struct ContentView: View {
+    @Environment(AppModel.self) private var appModel
 
     var body: some View {
-        HomeView()
+        NavigationStack {
+            HomeView()
+//                .navigationTitle("Projects")
+        }
+        .navigationDestination(for: UUID.self) { id in
+            ProjectDetailView(projectID: id)
+                .environment(appModel)
+        }
     }
 }
 

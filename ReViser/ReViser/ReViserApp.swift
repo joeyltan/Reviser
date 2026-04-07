@@ -14,9 +14,10 @@ struct ReViserApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(appModel)
-                .background(.black.opacity(0.8))
+            NavigationStack {
+                ContentView()
+            }
+            .environment(appModel)
         }
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {

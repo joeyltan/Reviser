@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A60FDEC12F7EF1F30093C279 /* RealityKitContent in Frameworks */ = {isa = PBXBuildFile; productRef = A60FDEC02F7EF1F30093C279 /* RealityKitContent */; };
+		A60FDEEC2F84A2060093C279 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A60FDEEB2F84A2060093C279 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A60FDEC12F7EF1F30093C279 /* RealityKitContent in Frameworks */,
+				A60FDEEC2F84A2060093C279 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +79,7 @@
 				A60FDEBD2F7EF1F20093C279 /* ReViser */,
 				A60FDEBE2F7EF1F30093C279 /* Packages */,
 				A60FDED22F7EF1F50093C279 /* ReViserTests */,
+				A60FDEEA2F84A2060093C279 /* Frameworks */,
 				A60FDEBC2F7EF1F20093C279 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -96,6 +99,13 @@
 				A60FDEBF2F7EF1F30093C279 /* RealityKitContent */,
 			);
 			path = Packages;
+			sourceTree = "<group>";
+		};
+		A60FDEEA2F84A2060093C279 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -119,6 +129,7 @@
 			name = ReViser;
 			packageProductDependencies = (
 				A60FDEC02F7EF1F30093C279 /* RealityKitContent */,
+				A60FDEEB2F84A2060093C279 /* ZIPFoundation */,
 			);
 			productName = ReViser;
 			productReference = A60FDEBB2F7EF1F20093C279 /* ReViser.app */;
@@ -175,6 +186,9 @@
 			);
 			mainGroup = A60FDEB22F7EF1F20093C279;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A60FDEE72F849F020093C279 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A60FDEBC2F7EF1F20093C279 /* Products */;
 			projectDirPath = "";
@@ -234,8 +248,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ReViser/ReViser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H26MV7ZBQB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
@@ -262,8 +278,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ReViser/ReViser.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H26MV7ZBQB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "$(TARGET_NAME)/Info.plist";
@@ -480,10 +498,26 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A60FDEE72F849F020093C279 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.20;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		A60FDEC02F7EF1F30093C279 /* RealityKitContent */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RealityKitContent;
+		};
+		A60FDEEB2F84A2060093C279 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A60FDEE72F849F020093C279 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

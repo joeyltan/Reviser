@@ -7,6 +7,8 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import Foundation
+import ZIPFoundation
 
 /// Maintains app-wide state
 @MainActor
@@ -105,10 +107,50 @@ class AppModel {
 
     /// Extremely lightweight .docx text extraction by unzipping and reading word/document.xml, then stripping basic XML tags.
     private func extractTextFromDocx(url: URL) async throws -> String {
-        // .docx is a zip. We'll use FileManager + built-in Archive via Foundation to access data.
-        // Since there's no first-party high-level unzip in Foundation, copy to a temporary location and use `ZIPFoundation`-like approach is ideal.
-        // To keep dependencies out, we fallback to reading the raw data and using `URLResourceValues`—but here we'll punt to QuickLook to generate a plain text preview if possible.
-        // For a robust solution, consider integrating a docx parser. For now, return empty string to avoid blocking.
-        return "" // Placeholder to keep app stable without third-party libs.
+        // Open the .docx as a ZIP archive using the throwing initializer
+        let archive: Archive
+        do {
+            archive = try Archive(url: url, accessMode: .read)
+        } catch {
+            throw NSError(domain: "Docx", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unable to open DOCX archive: \(error.localizedDescription)"])
+        }
+
+        // The main document is stored at word/document.xml
+        let mainPath = "word/document.xml"
+        guard let entry = archive[mainPath] else {
+            // Some docs might store content differently, but this is the standard.
+            return ""
+        }
+
+        var xmlData = Data()
+        let _ = try archive.extract(entry) { chunk in
+            xmlData.append(chunk)
+        }
+
+        guard let xmlString = String(data: xmlData, encoding: .utf8) else {
+            return ""
+        }
+
+        // Parse WordprocessingML and convert to formatted text
+        // Strategy:
+        // - Paragraphs <w:p> -> newline
+        // - Line breaks <w:br/> -> newline
+        // - Text runs <w:r> with <w:rPr>: detect <w:b/>, <w:i/> to wrap text with ** or _
+        // - Text content is inside <w:t> (preserve spaces when xml:space=\"preserve\")
+        let formatted = DocxFormatter().convert(documentXML: xmlString)
+
+        return formatted
+    }
+
+    
+    func updateProjectText(id: UUID, text: String) {
+        // If AppModel is a class with a mutable array:
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            projects[index].text = text
+            projects[index].lastModified = .now
+            // If you persist to disk, trigger save here
+            // saveProjects()
+        }
     }
 }
+
