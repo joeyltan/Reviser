@@ -94,6 +94,9 @@ struct HomeView: View {
                 }
                 Task {
                     await model.loadDocument(from: url)
+//                    print("after load", model.projects.first?.title)
+// this is empty what
+                    // print("after load 2", model.projects.first?.text)
                     await MainActor.run { isLoading = false }
                 }
             case .failure:

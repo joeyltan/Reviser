@@ -12,13 +12,11 @@ struct ProjectDetailView: View {
                     Text(project.title)
                         .font(.largeTitle)
                         .bold()
+                    // this is also scrollable
                     TextEditor(text: $text)
                         .font(.body)
                         .multilineTextAlignment(.leading)
                         .frame(minHeight: 300)
-//                    Text(project.text)
-//                        .font(.body)
-//                        .multilineTextAlignment(.leading)
                 }
                 .padding(24)
             }

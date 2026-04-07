@@ -72,12 +72,14 @@ class AppModel {
             }
             if url.pathExtension.lowercased() == "docx" {
                 let text = try await extractTextFromDocx(url: url)
+                print("extracting text from docx", text)
                 importedText = text
                 createOrUpdateProject(from: url, text: text)
                 return
             }
             // Fallback: try to read as UTF-8 text
             let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            print("load in is", text)
             importedText = text
             createOrUpdateProject(from: url, text: text)
         } catch {
@@ -107,7 +109,8 @@ class AppModel {
 
     /// Extremely lightweight .docx text extraction by unzipping and reading word/document.xml, then stripping basic XML tags.
     private func extractTextFromDocx(url: URL) async throws -> String {
-        // Open the .docx as a ZIP archive using the throwing initializer
+        // Open the .docx as a ZIP archive
+        // ok this is not loaded in quite right, because it already has the repetition here
         let archive: Archive
         do {
             archive = try Archive(url: url, accessMode: .read)
@@ -115,31 +118,21 @@ class AppModel {
             throw NSError(domain: "Docx", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unable to open DOCX archive: \(error.localizedDescription)"])
         }
 
-        // The main document is stored at word/document.xml
+        // Only extract the main document body to avoid repeated header/footer content.
         let mainPath = "word/document.xml"
         guard let entry = archive[mainPath] else {
-            // Some docs might store content differently, but this is the standard.
             return ""
         }
 
         var xmlData = Data()
-        let _ = try archive.extract(entry) { chunk in
+        _ = try archive.extract(entry) { chunk in
             xmlData.append(chunk)
         }
-
         guard let xmlString = String(data: xmlData, encoding: .utf8) else {
             return ""
         }
 
-        // Parse WordprocessingML and convert to formatted text
-        // Strategy:
-        // - Paragraphs <w:p> -> newline
-        // - Line breaks <w:br/> -> newline
-        // - Text runs <w:r> with <w:rPr>: detect <w:b/>, <w:i/> to wrap text with ** or _
-        // - Text content is inside <w:t> (preserve spaces when xml:space=\"preserve\")
-        let formatted = DocxFormatter().convert(documentXML: xmlString)
-
-        return formatted
+        return DocxFormatter().convert(documentXML: xmlString)
     }
 
     
