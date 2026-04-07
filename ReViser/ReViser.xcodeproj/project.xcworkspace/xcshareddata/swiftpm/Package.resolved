@@ -1,6 +1,15 @@
 {
-  "originHash" : "3c4398b8a511f719d1241ffb619a36b46696dbb004cacee431ef29de4a5717ee",
+  "originHash" : "d0a28a8d690e9c52fbd32f03460e09b262290987b4dcd3aeff8bcdcd47184334",
   "pins" : [
+    {
+      "identity" : "radix-ui-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/amirsaam/Radix-UI-Swift",
+      "state" : {
+        "revision" : "f6b68e9e6c620e45fa10e631c86df9935440927f",
+        "version" : "0.17.0"
+      }
+    },
     {
       "identity" : "zipfoundation",
       "kind" : "remoteSourceControl",

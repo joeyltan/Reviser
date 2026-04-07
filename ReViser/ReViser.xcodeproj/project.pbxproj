@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A60FDEC12F7EF1F30093C279 /* RealityKitContent in Frameworks */ = {isa = PBXBuildFile; productRef = A60FDEC02F7EF1F30093C279 /* RealityKitContent */; };
 		A60FDEEC2F84A2060093C279 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A60FDEEB2F84A2060093C279 /* ZIPFoundation */; };
+		A68BEB562F85C53D0051EEFA /* RadixUI in Frameworks */ = {isa = PBXBuildFile; productRef = A68BEB552F85C53D0051EEFA /* RadixUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A68BEB562F85C53D0051EEFA /* RadixUI in Frameworks */,
 				A60FDEC12F7EF1F30093C279 /* RealityKitContent in Frameworks */,
 				A60FDEEC2F84A2060093C279 /* ZIPFoundation in Frameworks */,
 			);
@@ -130,6 +132,7 @@
 			packageProductDependencies = (
 				A60FDEC02F7EF1F30093C279 /* RealityKitContent */,
 				A60FDEEB2F84A2060093C279 /* ZIPFoundation */,
+				A68BEB552F85C53D0051EEFA /* RadixUI */,
 			);
 			productName = ReViser;
 			productReference = A60FDEBB2F7EF1F20093C279 /* ReViser.app */;
@@ -188,6 +191,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A60FDEE72F849F020093C279 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				A68BEB542F85C5360051EEFA /* XCRemoteSwiftPackageReference "Radix-UI-Swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A60FDEBC2F7EF1F20093C279 /* Products */;
@@ -507,6 +511,14 @@
 				minimumVersion = 0.9.20;
 			};
 		};
+		A68BEB542F85C5360051EEFA /* XCRemoteSwiftPackageReference "Radix-UI-Swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/amirsaam/Radix-UI-Swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.17.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -518,6 +530,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A60FDEE72F849F020093C279 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		A68BEB552F85C53D0051EEFA /* RadixUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A68BEB542F85C5360051EEFA /* XCRemoteSwiftPackageReference "Radix-UI-Swift" */;
+			productName = RadixUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

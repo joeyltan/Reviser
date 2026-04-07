@@ -1,28 +1,84 @@
 import SwiftUI
+import RadixUI
 
 struct ProjectDetailView: View {
     @Environment(AppModel.self) private var model
     @State private var text: String = ""
+    @State private var splitMode: Bool = false
+    @State private var showToolbar: Bool = true
+    @State private var hoverPosition: CGFloat = 0
     let projectID: UUID
 
     var body: some View {
         if let project = model.projects.first(where: { $0.id == projectID }) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(project.title)
-                        .font(.largeTitle)
-                        .bold()
-                    // this is also scrollable
-                    TextEditor(text: $text)
-                        .font(.system(size: 25))
-                        .multilineTextAlignment(.leading)
-                        .frame(minHeight: 300)
+            HStack(spacing: 0) {
+                // Left collapsible toolbar
+                if showToolbar {
+                    VStack(spacing: 16) {
+                        Button(action: { splitMode.toggle() }) {
+                            Image("scissors", bundle: .radixUI)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 32, height: 32)
+                                .foregroundColor(splitMode ? .blue : .gray)
+                        }
+                        .help("Toggle split mode")
+                        
+                        Spacer()
+                    }
+                    .frame(width: 60)
+                    .padding()
+                    .background(Color(white: 0.95))
+                    .border(Color.gray.opacity(0.3), width: 1)
                 }
-                .padding(.vertical, 36)
-                .padding(.horizontal, 80)
+                
+                // Toggle toolbar button
+                Button(action: { showToolbar.toggle() }) {
+                    Image(systemName: showToolbar ? "chevron.left" : "chevron.right")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                }
+                .frame(width: 30)
+                .padding(.vertical)
+                
+                // Main content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(project.title)
+                            .font(.largeTitle)
+                            .bold()
+                        
+                        ZStack(alignment: .top) {
+                            TextEditor(text: $text)
+                                .font(.system(size: 25))
+                                .multilineTextAlignment(.leading)
+                                .frame(minHeight: 300)
+                                .onContinuousHover { phase in
+                                    if case .active(let location) = phase {
+                                        hoverPosition = location.y
+                                    }
+                                }
+                            
+                            if splitMode {
+                                VStack(spacing: 0) {
+                                    Spacer()
+                                        .frame(height: hoverPosition)
+                                    
+                                    Rectangle()
+                                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                                        .foregroundColor(.gray)
+                                        .frame(height: 1)
+                                }
+                                .allowsHitTesting(false)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 36)
+                    .padding(.horizontal, 80)
+                }
             }
             .onAppear {
-                print("proj text", project.text)
+//                print("proj text", project.text)
                 text = project.text
             }
             .onChange(of: text) { _, newValue in
