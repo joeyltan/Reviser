@@ -54,8 +54,9 @@ struct ProjectDetailView: View {
                                 .multilineTextAlignment(.leading)
                                 .frame(minHeight: 300)
 
-                            // Transparent hover tracking layer
+                            
                             if splitMode {
+                                // Transparent hover tracking layer
                                 Color.clear
                                     .contentShape(Rectangle())
                                     .onContinuousHover { phase in
@@ -68,43 +69,26 @@ struct ProjectDetailView: View {
                                         SpatialTapGesture()
                                             .onEnded { value in
                                                 hoverPosition = value.location.y
-                                                print("this tap y:", hoverPosition)
+//                                                print("this tap y:", hoverPosition)
                                             }
                                     )
                             }
 
                             if splitMode {
-                                Rectangle()
-                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
-                                    .foregroundColor(.gray)
-                                    .frame(height: 1)
-                                    .offset(y: hoverPosition)
-                                    .allowsHitTesting(false)
+                                // dashed line
+                                Path { path in
+                                    path.move(to: CGPoint(x: -10, y: hoverPosition))
+                                    path.addLine(to: CGPoint(x: 1020, y: hoverPosition)) // large width
+                                }
+                                .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                                .foregroundColor(.gray)
+                                .allowsHitTesting(false)
                             }
                         }
-                        
-                        // ZStack {
-                        //     TextEditor(text: $text)
-                        //         .font(.system(size: 25))
-                        //         .multilineTextAlignment(.leading)
-                        //         .frame(minHeight: 300)
-                        //         .contentShape(Rectangle())
-                            
-                        // }
                     }
                     .padding(.vertical, 36)
                     .padding(.horizontal, 80)
                 }
-//                .overlay(alignment: .topLeading) {
-//                    if splitMode {
-//                        Rectangle()
-//                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
-//                            .foregroundColor(.gray)
-//                            .frame(height: 1)
-//                            .offset(y: hoverPosition)
-//                            .allowsHitTesting(false)
-//                    }
-//                }
             }
             .onAppear {
 //                print("proj text", project.text)
