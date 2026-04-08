@@ -48,34 +48,63 @@ struct ProjectDetailView: View {
                             .font(.largeTitle)
                             .bold()
                         
-                        ZStack(alignment: .top) {
+                        ZStack(alignment: .topLeading) {
                             TextEditor(text: $text)
                                 .font(.system(size: 25))
                                 .multilineTextAlignment(.leading)
                                 .frame(minHeight: 300)
-                                .onContinuousHover { phase in
-                                    if case .active(let location) = phase {
-                                        hoverPosition = location.y
-                                    }
-                                }
-                            
+
+                            // Transparent hover tracking layer
                             if splitMode {
-                                VStack(spacing: 0) {
-                                    Spacer()
-                                        .frame(height: hoverPosition)
-                                    
-                                    Rectangle()
-                                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
-                                        .foregroundColor(.gray)
-                                        .frame(height: 1)
-                                }
-                                .allowsHitTesting(false)
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .onContinuousHover { phase in
+                                        if case .active(let location) = phase {
+                                            hoverPosition = location.y
+                                            print("hover y:", hoverPosition)
+                                        }
+                                    }
+                                    .gesture(
+                                        SpatialTapGesture()
+                                            .onEnded { value in
+                                                hoverPosition = value.location.y
+                                                print("this tap y:", hoverPosition)
+                                            }
+                                    )
+                            }
+
+                            if splitMode {
+                                Rectangle()
+                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                                    .foregroundColor(.gray)
+                                    .frame(height: 1)
+                                    .offset(y: hoverPosition)
+                                    .allowsHitTesting(false)
                             }
                         }
+                        
+                        // ZStack {
+                        //     TextEditor(text: $text)
+                        //         .font(.system(size: 25))
+                        //         .multilineTextAlignment(.leading)
+                        //         .frame(minHeight: 300)
+                        //         .contentShape(Rectangle())
+                            
+                        // }
                     }
                     .padding(.vertical, 36)
                     .padding(.horizontal, 80)
                 }
+//                .overlay(alignment: .topLeading) {
+//                    if splitMode {
+//                        Rectangle()
+//                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+//                            .foregroundColor(.gray)
+//                            .frame(height: 1)
+//                            .offset(y: hoverPosition)
+//                            .allowsHitTesting(false)
+//                    }
+//                }
             }
             .onAppear {
 //                print("proj text", project.text)
