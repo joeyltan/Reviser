@@ -49,11 +49,18 @@ struct ProjectDetailView: View {
                             .bold()
                         
                         ZStack(alignment: .topLeading) {
-                            TextEditor(text: $text)
-                                .font(.system(size: 25))
-                                .multilineTextAlignment(.leading)
-                                .frame(minHeight: 300)
-
+                            if splitMode {
+                                Text(text)
+                                    .font(.system(size: 25))
+                                    .multilineTextAlignment(.leading)
+                                    .frame(minHeight: 300)
+                            } else {
+                                // when not splitting into sections, show text editor
+                                TextEditor(text: $text)
+                                    .font(.system(size: 25))
+                                    .multilineTextAlignment(.leading)
+                                    .frame(minHeight: 300)
+                            }
                             
                             if splitMode {
                                 // Transparent hover tracking layer
@@ -72,9 +79,7 @@ struct ProjectDetailView: View {
 //                                                print("this tap y:", hoverPosition)
                                             }
                                     )
-                            }
-
-                            if splitMode {
+                                
                                 // dashed line
                                 Path { path in
                                     path.move(to: CGPoint(x: -10, y: hoverPosition))
