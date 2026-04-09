@@ -21,13 +21,14 @@ class AppModel {
         case open
     }
     
-    struct Project: Identifiable, Hashable {
+    struct Project: Identifiable {
         let id: UUID
         var title: String
         var sourceURL: URL
         var createdAt: Date
         var lastModified: Date
         var text: String
+        var sections: [Section]
     }
 
     var immersiveSpaceState = ImmersiveSpaceState.closed
@@ -90,20 +91,33 @@ class AppModel {
     private func createOrUpdateProject(from url: URL, text: String) {
         let baseTitle = url.deletingPathExtension().lastPathComponent
         let now = Date()
+
+        // Create initial section
+        let initialSection = Section(id: UUID(), text: text)
+
         if let idx = projects.firstIndex(where: { $0.sourceURL == url }) {
             // Update existing project
-            projects[idx].text = text
+            projects[idx].sections = [initialSection]
             projects[idx].lastModified = now
         } else {
+            // New project
             let project = Project(
                 id: UUID(),
                 title: baseTitle,
                 sourceURL: url,
                 createdAt: now,
                 lastModified: now,
-                text: text
+                text: text,
+                sections: [initialSection]
             )
             projects.append(project)
+        }
+    }
+    
+    func updateProjectSections(id: UUID, sections: [Section]) {
+        if let i = projects.firstIndex(where: { $0.id == id }) {
+            projects[i].sections = sections
+            projects[i].lastModified = .now
         }
     }
 
