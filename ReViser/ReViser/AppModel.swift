@@ -32,6 +32,7 @@ class AppModel {
     }
 
     var immersiveSpaceState = ImmersiveSpaceState.closed
+    var isSectionsWindowOpen: Bool = false
 
     // MARK: - Projects
     var projects: [Project] = []

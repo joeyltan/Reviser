@@ -13,12 +13,31 @@ struct ReViserApp: App {
     @State private var appModel = AppModel()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main-window") {
             NavigationStack {
                 ContentView()
             }
             .environment(appModel)
         }
+        
+        // this is for individual section windows (currently button right under section number)
+        // these can move at will - maybe think about how they can be also organized
+        WindowGroup(id: "section-window", for: UUID.self) { $sectionID in
+            if let sectionID {
+                SectionWindowScene(sectionID: sectionID)
+                    .environment(appModel)
+            }
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.automatic)
+        
+        // this is for the matrix section layout window (with all sections)
+        WindowGroup(id: "sections-window") {
+            SectionsWindowScene()
+                .environment(appModel)
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.automatic)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView()
@@ -33,3 +52,4 @@ struct ReViserApp: App {
         .immersionStyle(selection: .constant(.full), in: .full)
     }
 }
+
