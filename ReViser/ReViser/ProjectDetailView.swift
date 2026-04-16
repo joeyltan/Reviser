@@ -86,33 +86,45 @@ struct ProjectDetailView: View {
     
     @ViewBuilder
     func sectionView(section: Section, index: Int) -> some View {
-//        let index = sections.firstIndex(where: { $0.id == section.id }) ?? 0
-        Text("\(index + 1)")
-            .font(.caption)
-            .foregroundColor(.gray)
+        HStack(alignment: .top, spacing: 8) {
+            TextKitView(
+                text: binding(for: section),
+                splitMode: splitMode,
+                snappedY: $snappedY,
+                onSplit: { y in
+                    splitSection(id: section.id, y: y)
+                },
+                onAttach: { view in
+                    textViews[section.id] = view
+                },
+                onSelectionChange: { caret in
+                    activeSectionID = section.id
+                    caretIndexBySection[section.id] = caret
+                },
+                calculatedHeight: Binding(
+                    get: { sectionHeights[section.id] ?? 100 },
+                    set: { sectionHeights[section.id] = $0 }
+                )
+            )
+            .multilineTextAlignment(.leading)
+            .frame(height: sectionHeights[section.id] ?? 100)
+            .frame(maxWidth: .infinity)
 
-        TextKitView(
-            text: binding(for: section),
-            splitMode: splitMode,
-            snappedY: $snappedY,
-            onSplit: { y in
-                splitSection(id: section.id, y: y)
-            },
-            onAttach: { view in
-                textViews[section.id] = view
-            },
-            onSelectionChange: { caret in
-                activeSectionID = section.id
-                caretIndexBySection[section.id] = caret
-            },
-            calculatedHeight: Binding(
-                        get: { sectionHeights[section.id] ?? 100 },
-                        set: { sectionHeights[section.id] = $0 }
-                    ),
-        )
-        .multilineTextAlignment(.leading)
-        .frame(height: sectionHeights[section.id] ?? 100)
-        .frame(maxWidth: .infinity)// temporarily including this because I can't figure out a better wayy
+            Text("\(index + 1)")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+                .frame(width: 50, height: 50)
+                .background(
+                    Circle()
+                        .fill(Color.secondary.opacity(0.12))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                )
+                .padding(.leading, 8)
+        }
     }
     
     func binding(for section: Section) -> Binding<String> {
