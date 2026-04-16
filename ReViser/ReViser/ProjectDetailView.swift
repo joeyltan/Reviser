@@ -180,6 +180,21 @@ struct ProjectDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open this section in a window")
+
+                Button(role: .destructive) {
+                    deleteSection(id: section.id)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.red.opacity(0.12))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Delete this section")
             }
             .padding(.leading, 8)
         }
@@ -271,6 +286,28 @@ struct ProjectDetailView: View {
         }
         if !second.isEmpty {
             sections.insert(Section(id: UUID(), text: second), at: index + (first.isEmpty ? 0 : 1))
+        }
+    }
+
+    func deleteSection(id: UUID) {
+        guard let index = sections.firstIndex(where: { $0.id == id }) else { return }
+
+        let sectionToDelete = sections[index]
+        model.moveSectionToGraveyard(projectID: projectID, section: sectionToDelete, originalIndex: index)
+
+        sections.remove(at: index)
+        textViews[id] = nil
+        sectionHeights[id] = nil
+        caretIndexBySection[id] = nil
+
+        if activeSectionID == id {
+            activeSectionID = sections.first?.id
+        }
+
+        if sections.isEmpty {
+            let newSection = Section(id: UUID(), text: "")
+            sections = [newSection]
+            activeSectionID = newSection.id
         }
     }
 }

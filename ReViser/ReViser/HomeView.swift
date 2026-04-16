@@ -1,9 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import RadixUI
 
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @State private var showingImporter = false
+    @State private var showingGraveyard = false
     @State private var isLoading = false
     @Environment(\.openWindow) private var openWindow
 
@@ -74,6 +76,19 @@ struct HomeView: View {
                 } label: {
                     Label("Import Document", systemImage: "tray.and.arrow.down")
                 }
+
+                Button {
+                    showingGraveyard = true
+                } label: {
+                    Label {
+                        Text("View Graveyard")
+                    } icon: { // idk sizing weird here todo
+                        Image("crumpled-paper", bundle: .radixUI)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 32, height: 32)
+                    }
+                }
             } label: {
                 // Hamburger icon only; background fully blends
                 Image(systemName: "line.3.horizontal")
@@ -103,8 +118,65 @@ struct HomeView: View {
                 break
             }
         }
+        .sheet(isPresented: $showingGraveyard) {
+            GraveyardView()
+                .environment(model)
+        }
     }
     
+}
+
+struct GraveyardView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if model.sectionGraveyard.isEmpty {
+                    ContentUnavailableView(
+                        "Graveyard is empty",
+                        systemImage: "trash",
+                        description: Text("Deleted sections will appear here.")
+                    )
+                } else {
+                    List {
+                        ForEach(model.sectionGraveyard) { item in
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(item.projectTitle)
+                                    .font(.headline)
+
+                                Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(160)))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+
+                                HStack(spacing: 10) {
+                                    Button("Restore") {
+                                        model.restoreSectionFromGraveyard(item.id)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+
+                                    Button("Delete Permanently", role: .destructive) {
+                                        model.removeFromGraveyardPermanently(item.id)
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
+                            .padding(.vertical, 6)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Section Graveyard")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }
 
 #Preview {

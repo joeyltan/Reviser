@@ -31,8 +31,18 @@ class AppModel {
         var sections: [Section]
     }
 
+    struct DeletedSection: Identifiable, Equatable {
+        let id: UUID
+        let projectID: UUID
+        let projectTitle: String
+        let section: Section
+        let originalIndex: Int
+        let deletedAt: Date
+    }
+
     var immersiveSpaceState = ImmersiveSpaceState.closed
     var isSectionsWindowOpen: Bool = false
+    var sectionGraveyard: [DeletedSection] = []
 
     // MARK: - Projects
     var projects: [Project] = []
@@ -120,6 +130,36 @@ class AppModel {
             projects[i].sections = sections
             projects[i].lastModified = .now
         }
+    }
+
+    func moveSectionToGraveyard(projectID: UUID, section: Section, originalIndex: Int) {
+        guard let project = projects.first(where: { $0.id == projectID }) else { return }
+
+        let deleted = DeletedSection(
+            id: UUID(),
+            projectID: projectID,
+            projectTitle: project.title,
+            section: section,
+            originalIndex: originalIndex,
+            deletedAt: .now
+        )
+        sectionGraveyard.insert(deleted, at: 0)
+    }
+
+    func restoreSectionFromGraveyard(_ deletedID: UUID) {
+        guard let graveyardIndex = sectionGraveyard.firstIndex(where: { $0.id == deletedID }) else { return }
+        let deleted = sectionGraveyard[graveyardIndex]
+
+        guard let projectIndex = projects.firstIndex(where: { $0.id == deleted.projectID }) else { return }
+
+        let insertionIndex = min(max(deleted.originalIndex, 0), projects[projectIndex].sections.count)
+        projects[projectIndex].sections.insert(deleted.section, at: insertionIndex)
+        projects[projectIndex].lastModified = .now
+        sectionGraveyard.remove(at: graveyardIndex)
+    }
+
+    func removeFromGraveyardPermanently(_ deletedID: UUID) {
+        sectionGraveyard.removeAll { $0.id == deletedID }
     }
 
     /// Extremely lightweight .docx text extraction by unzipping and reading word/document.xml, then stripping basic XML tags.
