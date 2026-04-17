@@ -17,6 +17,8 @@ struct ProjectDetailView: View {
     @State private var caretIndexBySection: [UUID: Int] = [:]
     @State private var sectionHeights: [UUID: CGFloat] = [:]
     @State private var visibleActionSectionIDs: Set<UUID> = []
+    @State private var visibleNoteSectionIDs: Set<UUID> = []
+    @State private var noteDraftBySection: [UUID: String] = [:]
 
     let projectID: UUID
 
@@ -81,6 +83,20 @@ struct ProjectDetailView: View {
                         .foregroundColor(windowMode ? .blue : .gray)
                 }
                 .help("Window section mode")
+
+                Button {
+                    model.noteMode.toggle()
+                    if !model.noteMode {
+                        visibleNoteSectionIDs.removeAll()
+                    }
+                } label: {
+                    Image(systemName: "note.text.badge.plus")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(model.noteMode ? .blue : .gray)
+                }
+                .help(model.noteMode ? "Exit notes mode" : "Add notes mode")
                 Spacer()
             }
             .frame(width: 60)
@@ -132,28 +148,35 @@ struct ProjectDetailView: View {
     @ViewBuilder
     func sectionView(section: Section, index: Int) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            TextKitView(
-                text: binding(for: section),
-                splitMode: splitMode,
-                snappedY: $snappedY,
-                onSplit: { y in
-                    splitSection(id: section.id, y: y)
-                },
-                onAttach: { view in
-                    textViews[section.id] = view
-                },
-                onSelectionChange: { caret in
-                    activeSectionID = section.id
-                    caretIndexBySection[section.id] = caret
-                },
-                calculatedHeight: Binding(
-                    get: { sectionHeights[section.id] ?? 100 },
-                    set: { sectionHeights[section.id] = $0 }
+            VStack(alignment: .leading, spacing: 12) {
+                TextKitView(
+                    text: binding(for: section),
+                    splitMode: splitMode,
+                    snappedY: $snappedY,
+                    onSplit: { y in
+                        splitSection(id: section.id, y: y)
+                    },
+                    onAttach: { view in
+                        textViews[section.id] = view
+                    },
+                    onSelectionChange: { caret in
+                        activeSectionID = section.id
+                        caretIndexBySection[section.id] = caret
+                    },
+                    calculatedHeight: Binding(
+                        get: { sectionHeights[section.id] ?? 100 },
+                        set: { sectionHeights[section.id] = $0 }
+                    )
                 )
-            )
-            .multilineTextAlignment(.leading)
-            .frame(height: sectionHeights[section.id] ?? 100)
-            .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.leading)
+                .frame(height: sectionHeights[section.id] ?? 100)
+                .frame(maxWidth: .infinity)
+
+                if model.noteMode {
+                    sectionNotesView(sectionID: section.id)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .center, spacing: 8) {
                 Text("\(index + 1)")
@@ -227,6 +250,69 @@ struct ProjectDetailView: View {
             }
             .padding(.leading, 8)
         }
+    }
+
+    @ViewBuilder
+    private func sectionNotesView(sectionID: UUID) -> some View {
+        let notes = sections.first(where: { $0.id == sectionID })?.notes ?? []
+
+        VStack(alignment: .leading, spacing: 8) {
+            if notes.isEmpty {
+                Text("No notes yet")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
+                    Text("• \(note)")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            Button {
+                if visibleNoteSectionIDs.contains(sectionID) {
+                    visibleNoteSectionIDs.remove(sectionID)
+                } else {
+                    visibleNoteSectionIDs.insert(sectionID)
+                }
+            } label: {
+                Image(systemName: visibleNoteSectionIDs.contains(sectionID) ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .padding(6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.secondary.opacity(0.12))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(visibleNoteSectionIDs.contains(sectionID) ? "Hide add note box" : "Show add note box")
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            if visibleNoteSectionIDs.contains(sectionID) {
+                HStack(spacing: 8) {
+                    TextField(
+                        "Add a note to this section",
+                        text: Binding(
+                            get: { noteDraftBySection[sectionID] ?? "" },
+                            set: { noteDraftBySection[sectionID] = $0 }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+
+                    Button("Add") {
+                        addNote(to: sectionID)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled((noteDraftBySection[sectionID] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondary.opacity(0.08))
+        )
     }
     
     func binding(for section: Section) -> Binding<String> {
@@ -332,6 +418,8 @@ struct ProjectDetailView: View {
         textViews[id] = nil
         sectionHeights[id] = nil
         caretIndexBySection[id] = nil
+        visibleNoteSectionIDs.remove(id)
+        noteDraftBySection[id] = nil
 
         if activeSectionID == id {
             activeSectionID = sections.first?.id
@@ -342,6 +430,16 @@ struct ProjectDetailView: View {
             sections = [newSection]
             activeSectionID = newSection.id
         }
+    }
+
+    func addNote(to sectionID: UUID) {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }) else { return }
+
+        let draft = (noteDraftBySection[sectionID] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !draft.isEmpty else { return }
+
+        sections[idx].notes.append(draft)
+        noteDraftBySection[sectionID] = ""
     }
 }
 
@@ -495,5 +593,25 @@ struct TextKitView: UIViewRepresentable {
 struct Section: Identifiable, Codable, Equatable {
     let id: UUID
     var text: String
+    var notes: [String] = []
+
+    init(id: UUID, text: String, notes: [String] = []) {
+        self.id = id
+        self.text = text
+        self.notes = notes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case text
+        case notes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        text = try container.decode(String.self, forKey: .text)
+        notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
+    }
 }
 
