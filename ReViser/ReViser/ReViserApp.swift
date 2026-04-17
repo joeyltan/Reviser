@@ -39,6 +39,13 @@ struct ReViserApp: App {
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 
+        WindowGroup(id: "graveyard-window") {
+            GraveyardWindowScene()
+                .environment(appModel)
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.automatic)
+
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView()
                 .environment(appModel)

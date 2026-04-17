@@ -5,7 +5,6 @@ import RadixUI
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @State private var showingImporter = false
-    @State private var showingGraveyard = false
     @State private var isLoading = false
     @Environment(\.openWindow) private var openWindow
 
@@ -78,7 +77,7 @@ struct HomeView: View {
                 }
 
                 Button {
-                    showingGraveyard = true
+                    openWindow(id: "graveyard-window")
                 } label: {
                     Label {
                         Text("View Graveyard")
@@ -118,17 +117,14 @@ struct HomeView: View {
                 break
             }
         }
-        .sheet(isPresented: $showingGraveyard) {
-            GraveyardView()
-                .environment(model)
-        }
     }
     
 }
 
-struct GraveyardView: View {
+struct GraveyardWindowScene: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
+    @State private var selectedGraveyardItem: AppModel.DeletedSection?
 
     var body: some View {
         NavigationStack {
@@ -143,14 +139,17 @@ struct GraveyardView: View {
                     List {
                         ForEach(model.sectionGraveyard) { item in
                             VStack(alignment: .leading, spacing: 10) {
-                                Text(item.projectTitle)
-                                    .font(.headline)
 
-                                Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(160)))
-                                    .font(.subheadline)
+                                Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(600)))
+                                    .font(.headline)
                                     .foregroundStyle(.secondary)
 
                                 HStack(spacing: 10) {
+                                    Button("View") {
+                                        selectedGraveyardItem = item
+                                    }
+                                    .buttonStyle(.bordered)
+
                                     Button("Restore") {
                                         model.restoreSectionFromGraveyard(item.id)
                                     }
@@ -167,15 +166,59 @@ struct GraveyardView: View {
                     }
                 }
             }
-            .navigationTitle("Section Graveyard")
+            .navigationTitle("Graveyard")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
-                        dismiss()
+                        dismissWindow(id: "graveyard-window")
                     }
                 }
             }
         }
+        .sheet(item: $selectedGraveyardItem) { item in
+            GraveyardSectionDetailView(item: item)
+        }
+    }
+}
+
+struct GraveyardSectionDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    let item: AppModel.DeletedSection
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Text(item.projectTitle)
+                    //     .font(.headline)
+
+                    Text(item.section.text.isEmpty ? "(Empty section)" : item.section.text)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(.thinMaterial)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(.quaternary, lineWidth: 1)
+                        )
+                }
+                .padding(24)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 900, minHeight: 700)
     }
 }
 

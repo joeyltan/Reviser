@@ -293,7 +293,11 @@ struct ProjectDetailView: View {
         guard let index = sections.firstIndex(where: { $0.id == id }) else { return }
 
         let sectionToDelete = sections[index]
-        model.moveSectionToGraveyard(projectID: projectID, section: sectionToDelete, originalIndex: index)
+        model.moveSectionToGraveyard(
+            projectID: projectID,
+            section: sectionToDelete,
+            originalIndex: index
+        )
 
         sections.remove(at: index)
         textViews[id] = nil
