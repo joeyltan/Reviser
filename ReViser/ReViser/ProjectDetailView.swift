@@ -48,6 +48,9 @@ struct ProjectDetailView: View {
             .onChange(of: sections) { _, newSections in
                 model.updateProjectSections(id: projectID, sections: newSections)
             }
+            .onChange(of: project.sections) { _, updatedSections in
+                sections = updatedSections
+            }
         } else {
             Text("Project not found")
         }

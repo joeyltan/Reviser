@@ -12,6 +12,8 @@ struct SectionsWindowScene: View {
     @State private var sections: [Section] = []
     @State private var sectionHeights: [UUID: CGFloat] = [:]
     @State private var currentProjectID: UUID?
+    @State private var savedSectionOrder: [UUID] = []
+    @State private var hasPendingReorder: Bool = false
     
     var body: some View {
         Group {
@@ -28,6 +30,15 @@ struct SectionsWindowScene: View {
                                     Label("Return to Text", systemImage: "arrow.left.circle")
                                 }
                             }
+
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    saveCurrentOrder()
+                                } label: {
+                                    Label("Save Reorder", systemImage: "checkmark.circle")
+                                }
+                                .disabled(!hasPendingReorder)
+                            }
                         }
                 }
             } else {
@@ -42,7 +53,7 @@ struct SectionsWindowScene: View {
             model.isSectionsWindowOpen = false
         }
         .onChange(of: sections) { _, newSections in
-            updateProjectSections(newSections)
+            hasPendingReorder = sections.map(\.id) != savedSectionOrder
         }
     }
     
@@ -61,12 +72,16 @@ struct SectionsWindowScene: View {
             currentProjectID = nil
             sections = []
         }
+
+        savedSectionOrder = sections.map(\.id)
+        hasPendingReorder = false
     }
     
-    private func updateProjectSections(_ newSections: [Section]) {
-        if let projectID = currentProjectID {
-            model.updateProjectSections(id: projectID, sections: newSections)
-        }
+    private func saveCurrentOrder() {
+        guard let projectID = currentProjectID else { return }
+        model.updateProjectSections(id: projectID, sections: sections)
+        savedSectionOrder = sections.map(\.id)
+        hasPendingReorder = false
     }
 }
 
@@ -157,6 +172,7 @@ struct SectionsOverviewCard: View {
 
                     Spacer()
 
+                    // todo: maybe change this so that more than one seciton can be fully expanded at a time
                     Button {
                         onToggleExpand()
                     } label: {
