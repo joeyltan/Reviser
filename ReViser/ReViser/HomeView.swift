@@ -39,7 +39,7 @@ struct HomeView: View {
                                         Text(project.title)
                                             .font(.headline)
                                             .foregroundStyle(.primary)
-                                        Text(project.text.prefix(120))
+                                        Text(model.previewText(for: project))
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
                                     }
@@ -137,31 +137,37 @@ struct GraveyardWindowScene: View {
                     )
                 } else {
                     List {
-                        ForEach(model.sectionGraveyard) { item in
-                            VStack(alignment: .leading, spacing: 10) {
+                        ForEach(groupedGraveyard, id: \.projectID) { group in
+                            SwiftUI.Section {
+                                ForEach(group.items) { item in
+                                    VStack(alignment: .leading, spacing: 10) {
 
-                                Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(600)))
-                                    .font(.headline)
-                                    .foregroundStyle(.secondary)
+                                        Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(600)))
+                                            .font(.headline)
+                                            .foregroundStyle(.secondary)
 
-                                HStack(spacing: 10) {
-                                    Button("View") {
-                                        selectedGraveyardItem = item
+                                        HStack(spacing: 10) {
+                                            Button("View") {
+                                                selectedGraveyardItem = item
+                                            }
+                                            .buttonStyle(.bordered)
+
+                                            Button("Restore") {
+                                                model.restoreSectionFromGraveyard(item.id)
+                                            }
+                                            .buttonStyle(.borderedProminent)
+
+                                            Button("Delete Permanently", role: .destructive) {
+                                                model.removeFromGraveyardPermanently(item.id)
+                                            }
+                                            .buttonStyle(.bordered)
+                                        }
                                     }
-                                    .buttonStyle(.bordered)
-
-                                    Button("Restore") {
-                                        model.restoreSectionFromGraveyard(item.id)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-
-                                    Button("Delete Permanently", role: .destructive) {
-                                        model.removeFromGraveyardPermanently(item.id)
-                                    }
-                                    .buttonStyle(.bordered)
+                                    .padding(.vertical, 6)
                                 }
+                            } header: {
+                                Text(group.projectTitle)
                             }
-                            .padding(.vertical, 6)
                         }
                     }
                 }
@@ -178,6 +184,25 @@ struct GraveyardWindowScene: View {
         .sheet(item: $selectedGraveyardItem) { item in
             GraveyardSectionDetailView(item: item)
         }
+    }
+
+    private var groupedGraveyard: [(projectID: UUID, projectTitle: String, items: [AppModel.DeletedSection])] {
+        let groupedByProject = Dictionary(grouping: model.sectionGraveyard, by: \.projectID)
+
+        return groupedByProject
+            .compactMap { projectID, items in
+                guard let first = items.first else { return nil }
+                return (
+                    projectID: projectID,
+                    projectTitle: first.projectTitle,
+                    items: items.sorted { $0.deletedAt > $1.deletedAt }
+                )
+            }
+            .sorted {
+                let lhsDate = $0.items.first?.deletedAt ?? .distantPast
+                let rhsDate = $1.items.first?.deletedAt ?? .distantPast
+                return lhsDate > rhsDate
+            }
     }
 }
 

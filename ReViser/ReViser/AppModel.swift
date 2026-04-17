@@ -128,8 +128,23 @@ class AppModel {
     func updateProjectSections(id: UUID, sections: [Section]) {
         if let i = projects.firstIndex(where: { $0.id == id }) {
             projects[i].sections = sections
+            projects[i].text = sections
+                .map(\.text)
+                .joined(separator: "\n\n")
             projects[i].lastModified = .now
         }
+    }
+
+    func previewText(for project: Project, limit: Int = 200) -> String {
+        let sectionsText = project.sections
+            .map(\.text)
+            .joined(separator: "\n\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let source = sectionsText.isEmpty ? project.text : sectionsText
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "(Empty project)" }
+        return String(trimmed.prefix(limit))
     }
 
     func moveSectionToGraveyard(projectID: UUID, section: Section, originalIndex: Int) {
@@ -195,6 +210,11 @@ class AppModel {
         // If AppModel is a class with a mutable array:
         if let index = projects.firstIndex(where: { $0.id == id }) {
             projects[index].text = text
+            if projects[index].sections.isEmpty {
+                projects[index].sections = [Section(id: UUID(), text: text)]
+            } else {
+                projects[index].sections[0].text = text
+            }
             projects[index].lastModified = .now
             // If you persist to disk, trigger save here
             // saveProjects()
