@@ -8,24 +8,27 @@ struct SectionWindowScene: View {
     @State private var calculatedHeight: CGFloat = 200
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let binding = sectionBinding() {
-                TextKitView(
-                    text: binding,
-                    splitMode: false,
-                    snappedY: .constant(0),
-                    onSplit: { _ in },
-                    onAttach: { _ in },
-                    onSelectionChange: { _ in },
-                    calculatedHeight: $calculatedHeight
-                )
-                .frame(height: calculatedHeight)
-                .frame(maxWidth: .infinity)
-            } else {
-                ContentUnavailableView("Section not found", systemImage: "doc")
+        GeometryReader { proxy in
+            VStack(alignment: .leading, spacing: 12) {
+                if let binding = sectionBinding() {
+                    TextKitView(
+                        text: binding,
+                        splitMode: false,
+                        snappedY: .constant(0),
+                        onSplit: { _ in },
+                        onAttach: { _ in },
+                        onSelectionChange: { _ in },
+                        calculatedHeight: $calculatedHeight
+                    )
+                    .frame(height: min(calculatedHeight, max(240, proxy.size.height - 40)))
+                    .frame(maxWidth: .infinity)
+                } else {
+                    ContentUnavailableView("Section not found", systemImage: "doc")
+                }
             }
+            .padding(50)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding()
         .navigationTitle("Section")
     }
 

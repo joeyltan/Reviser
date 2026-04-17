@@ -16,6 +16,7 @@ struct ProjectDetailView: View {
     @State private var activeSectionID: UUID?
     @State private var caretIndexBySection: [UUID: Int] = [:]
     @State private var sectionHeights: [UUID: CGFloat] = [:]
+    @State private var visibleActionSectionIDs: Set<UUID> = []
 
     let projectID: UUID
 
@@ -170,10 +171,14 @@ struct ProjectDetailView: View {
                     )
 
                 Button {
-                    openWindow(id: "section-window", value: section.id)
-                } label: {
-                    Image(systemName: "rectangle.badge.plus")
-                        .font(.system(size: 14, weight: .semibold))
+                    if visibleActionSectionIDs.contains(section.id) {
+                        visibleActionSectionIDs.remove(section.id)
+                    } else {
+                        visibleActionSectionIDs.insert(section.id)
+                    }
+                } label: { // consider changing ellipsis
+                    Image(systemName: visibleActionSectionIDs.contains(section.id) ? "chevron.up.circle" : "ellipsis.circle")
+                        .font(.system(size: 20))
                         .foregroundStyle(.secondary)
                         .padding(6)
                         .background(
@@ -182,22 +187,43 @@ struct ProjectDetailView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .help("Open this section in a window")
+                .help(visibleActionSectionIDs.contains(section.id) ? "Hide actions" : "Show actions")
+                .padding(.top, 6) // for spacing between the section number and tool buttons
 
-                Button(role: .destructive) {
-                    deleteSection(id: section.id)
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.red)
-                        .padding(6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.red.opacity(0.12))
-                        )
+                if visibleActionSectionIDs.contains(section.id) {
+                    VStack(spacing: 10) {
+                        Button {
+                            openWindow(id: "section-window", value: section.id)
+                        } label: {
+                            Image(systemName: "rectangle.badge.plus")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.secondary)
+                                .padding(6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.blue.opacity(0.12))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open this section in a window")
+
+                        Button(role: .destructive) {
+                            deleteSection(id: section.id)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.red)
+                                .padding(6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.red.opacity(0.12))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete this section")
+                    }
+                    .padding(.top, 10)
                 }
-                .buttonStyle(.plain)
-                .help("Delete this section")
             }
             .padding(.leading, 8)
         }

@@ -73,7 +73,7 @@ struct HomeView: View {
                 Button {
                     showingImporter = true
                 } label: {
-                    Label("Import Document", systemImage: "tray.and.arrow.down")
+                    Label("Import Document", systemImage: "square.and.arrow.up")
                 }
 
                 Button {
