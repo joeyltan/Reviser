@@ -1,4 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+extension UTType {
+    static let sectionReorder = UTType(exportedAs: "com.reviser.section-reorder")
+}
 
 struct SectionsWindowScene: View {
     @Environment(AppModel.self) var model
@@ -69,15 +74,183 @@ struct SectionsGridView: View {
     static let columns: [GridItem] = [GridItem(.adaptive(minimum: 420), spacing: 24)]
     
     @Binding var sections: [Section]
+    @State private var draggedSectionID: UUID?
+    @State private var expandedSectionID: UUID?
     
     var body: some View {
         ScrollView {
             LazyVGrid(columns: Self.columns, spacing: 24) {
                 ForEach(Array($sections.enumerated()), id: \.element.id) { index, $section in
-                    SectionWindowCard(index: index, section: $section)
+                    SectionsOverviewCard(
+                        index: index,
+                        section: $section,
+                        isExpanded: expandedSectionID == section.id,
+                        onToggleExpand: {
+                            withAnimation {
+                                expandedSectionID = expandedSectionID == section.id ? nil : section.id
+                            }
+                        },
+                        onDragStart: {
+                            draggedSectionID = section.id
+
+                            let provider = NSItemProvider()
+                            provider.registerDataRepresentation(
+                                forTypeIdentifier: UTType.sectionReorder.identifier,
+                                visibility: .all
+                            ) { completion in
+                                completion(Data(), nil)
+                                return nil
+                            }
+                            return provider
+                        }
+                    )
+                    .opacity(draggedSectionID == section.id ? 0.6 : 1.0)
+                        .onDrop(
+                            of: [UTType.sectionReorder],
+                            delegate: SectionReorderDropDelegate(
+                                targetSection: section,
+                                sections: $sections,
+                                draggedSectionID: $draggedSectionID
+                            )
+                        )
                 }
             }
             .padding(24)
+        }
+    }
+}
+
+struct SectionsOverviewCard: View {
+    let index: Int
+    @Binding var section: Section
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
+    let onDragStart: () -> NSItemProvider
+
+    private let collapsedEditorHeight: CGFloat = 120
+    private let collapsedCardHeight: CGFloat = 220
+
+    var body: some View {
+        GeometryReader { proxy in
+            let contentWidth = max(proxy.size.width - 24, 240)
+            let editorHeight = isExpanded ? estimatedEditorHeight(for: section.text, width: contentWidth) : collapsedEditorHeight
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 24, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.12))
+                    )
+                    .contentShape(Capsule())
+                    .onDrag {
+                        onDragStart()
+                    }
+                    .help("Drag to redorder")
+
+                    Spacer()
+
+                    Button {
+                        onToggleExpand()
+                    } label: {
+                        Image(systemName: isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .help(isExpanded ? "Collapse section" : "Expand section")
+                }
+
+                HStack {
+                    Text("\(index + 1)")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            Circle().fill(Color.secondary.opacity(0.12))
+                        )
+                        .overlay(
+                            Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                        )
+                    Spacer()
+                }
+
+                TextEditor(text: $section.text)
+                    .font(.system(size: 25))
+                    .frame(height: editorHeight)
+                    .scrollContentBackground(.hidden)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.secondarySystemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
+        }
+        .frame(height: isExpanded ? expandedCardHeight(for: section.text, width: 420) : collapsedCardHeight)
+    }
+
+    private func estimatedEditorHeight(for text: String, width: CGFloat) -> CGFloat {
+        let displayText = text.isEmpty ? " " : text
+        let font = UIFont.systemFont(ofSize: 25)
+        let rect = (displayText as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        return max(collapsedEditorHeight, ceil(rect.height) + 24)
+    }
+
+    private func expandedCardHeight(for text: String, width: CGFloat) -> CGFloat {
+        estimatedEditorHeight(for: text, width: width) + 96
+    }
+}
+
+struct SectionReorderDropDelegate: DropDelegate {
+    let targetSection: Section
+    @Binding var sections: [Section]
+    @Binding var draggedSectionID: UUID?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID = draggedSectionID,
+              draggedID != targetSection.id,
+              let fromIndex = sections.firstIndex(where: { $0.id == draggedID }),
+              let toIndex = sections.firstIndex(where: { $0.id == targetSection.id }) else { return }
+
+        withAnimation {
+            sections.move(
+                fromOffsets: IndexSet(integer: fromIndex),
+                toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+            )
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedSectionID = nil
+        return true
+    }
+
+    func dropExited(info: DropInfo) {
+        if !info.hasItemsConforming(to: [UTType.sectionReorder]) {
+            draggedSectionID = nil
         }
     }
 }
