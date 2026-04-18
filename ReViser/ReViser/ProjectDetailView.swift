@@ -1,6 +1,10 @@
 import SwiftUI
 import RadixUI
 import UIKit
+import UniformTypeIdentifiers
+import ZIPFoundation
+
+// let restitchedPDFType = UTType(exportedAs: "com.reviser.restitched-pdf", conformingTo: .pdf)
 
 struct ProjectDetailView: View {
     @Environment(AppModel.self) private var model
@@ -12,6 +16,11 @@ struct ProjectDetailView: View {
     @State private var showToolbar: Bool = true
     @State private var splitMode: Bool = false
     @State private var windowMode: Bool = false
+    @State private var showingRestitchedManuscript: Bool = false
+    // @State private var showingRestitchedPDFExport: Bool = false
+    @State private var showingRestitchedDocxExport: Bool = false
+    // @State private var restitchedPDFDocument = RestitchedManuscriptPDFDocument(text: "")
+    @State private var restitchedDocxDocument = RestitchedManuscriptDocxDocument(text: "")
 
     @State private var activeSectionID: UUID?
     @State private var caretIndexBySection: [UUID: Int] = [:]
@@ -27,7 +36,11 @@ struct ProjectDetailView: View {
             HStack(spacing: 0) {
                 toolbarView
                 toggleButton
-                mainContentView(project: project)
+                if showingRestitchedManuscript {
+                    restitchedManuscriptView(project: project)
+                } else {
+                    mainContentView(project: project)
+                }
             }
             .onAppear {
                 initializeSections(from: project)
@@ -54,6 +67,18 @@ struct ProjectDetailView: View {
             .onChange(of: project.sections) { _, updatedSections in
                 sections = updatedSections
             }
+            // .fileExporter(
+            //     isPresented: $showingRestitchedPDFExport,
+            //     document: restitchedPDFDocument,
+            //     contentType: restitchedPDFType,
+            //     defaultFilename: "\(project.title)-restitched.pdf"
+            // ) { _ in }
+            .fileExporter(
+                isPresented: $showingRestitchedDocxExport,
+                document: restitchedDocxDocument,
+                contentType: UTType(filenameExtension: "docx")!,
+                defaultFilename: "\(project.title)-restitched.docx"
+            ) { _ in }
         } else {
             Text("Project not found")
         }
@@ -83,6 +108,17 @@ struct ProjectDetailView: View {
                         .foregroundColor(windowMode ? .blue : .gray)
                 }
                 .help("Window section mode")
+
+                Button {
+                    showingRestitchedManuscript.toggle()
+                } label: {
+                    Image(systemName: "doc.text")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(showingRestitchedManuscript ? .blue : .gray)
+                }
+                .help(showingRestitchedManuscript ? "Close restitched manuscript" : "View restitched manuscript")
 
                 Button {
                     model.noteMode.toggle()
@@ -143,6 +179,73 @@ struct ProjectDetailView: View {
         sections = project.sections.isEmpty
             ? [Section(id: UUID(), text: "")]
             : project.sections
+    }
+
+    private func restitchedManuscriptText() -> String {
+        sections
+            .map(\.text)
+            .joined(separator: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func restitchedSectionTexts() -> [String] {
+        sections.map(\.text)
+    }
+
+    @ViewBuilder
+    private func restitchedManuscriptView(project: AppModel.Project) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Restitched Manuscript")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Text(project.title)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Menu {
+                    // Button {
+                    //     restitchedPDFDocument = RestitchedManuscriptPDFDocument(sections: restitchedSectionTexts())
+                    //     showingRestitchedPDFExport = true
+                    // } label: {
+                    //     Label("Export as PDF", systemImage: "doc.richtext")
+                    // }
+
+                    Button {
+                        restitchedDocxDocument = RestitchedManuscriptDocxDocument(text: restitchedManuscriptText())
+                        showingRestitchedDocxExport = true
+                    } label: {
+                        Label("Export as DOCX", systemImage: "doc.text")
+                    }
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.down")
+                }
+
+                Button {
+                    showingRestitchedManuscript = false
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            ScrollView {
+                Text(restitchedManuscriptText().isEmpty ? "(Empty project)" : restitchedManuscriptText())
+                    .font(.system(size: 24))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(.secondarySystemBackground))
+                    )
+            }
+        }
+        .padding(24)
     }
     
     @ViewBuilder
@@ -612,6 +715,188 @@ struct Section: Identifiable, Codable, Equatable {
         id = try container.decode(UUID.self, forKey: .id)
         text = try container.decode(String.self, forKey: .text)
         notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
+    }
+}
+
+struct RestitchedManuscriptPDFDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [restitchedPDFType] }
+
+    var sections: [String]
+
+    init(text: String = "") {
+        self.sections = text.isEmpty ? [] : [text]
+    }
+
+    init(sections: [String]) {
+        self.sections = sections
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        let text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+        sections = text.isEmpty ? [] : [text]
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Self.makePDFData(from: sections))
+    }
+
+    private static func makePDFData(from sections: [String]) -> Data {
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let contentRect = pageRect.insetBy(dx: 36, dy: 36)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        let exportText = sections.isEmpty ? "(Empty project)" : sections.joined(separator: "")
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        paragraphStyle.paragraphSpacing = 6
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 16),
+            .paragraphStyle: paragraphStyle
+        ]
+
+        let attributedText = NSAttributedString(string: exportText, attributes: attributes)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+
+        return renderer.pdfData { context in
+            var currentLocation = 0
+
+            repeat {
+                context.beginPage()
+                let cgContext = context.cgContext
+                cgContext.saveGState()
+                cgContext.translateBy(x: 0, y: pageRect.height)
+                cgContext.scaleBy(x: 1, y: -1)
+
+                let path = CGPath(rect: contentRect, transform: nil)
+                let frame = CTFramesetterCreateFrame(
+                    framesetter,
+                    CFRange(location: currentLocation, length: 0),
+                    path,
+                    nil
+                )
+                CTFrameDraw(frame, cgContext)
+
+                let visibleRange = CTFrameGetVisibleStringRange(frame)
+                currentLocation += visibleRange.length
+                cgContext.restoreGState()
+
+                if attributedText.length == 0 {
+                    break
+                }
+            } while currentLocation < attributedText.length
+        }
+    }
+}
+
+struct RestitchedManuscriptDocxDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [UTType(filenameExtension: "docx")!] }
+
+    var sections: [String]
+
+    init(text: String = "") {
+        self.sections = text.isEmpty ? [] : [text]
+    }
+
+    init(sections: [String]) {
+        self.sections = sections
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        let text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+        sections = text.isEmpty ? [] : [text]
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("docx")
+
+        try Self.writeDocxArchive(sections: sections, to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let data = try Data(contentsOf: tempURL)
+        return FileWrapper(regularFileWithContents: data)
+    }
+
+    private static func writeDocxArchive(sections: [String], to url: URL) throws {
+        let archive = try Archive(url: url, accessMode: .create)
+        let paragraphs = sections.isEmpty ? ["(Empty project)"] : sections
+
+        let bodyXML = paragraphs.map { paragraph in
+            let cleaned = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.isEmpty {
+                return "<w:p/>"
+            }
+
+            let runs = cleaned
+                .components(separatedBy: CharacterSet.newlines)
+                .enumerated()
+                .map { index, line in
+                    let escaped = xmlEscape(line)
+                    if index == 0 {
+                        return "<w:r><w:t xml:space=\"preserve\">\(escaped)</w:t></w:r>"
+                    } else {
+                        return "<w:r><w:br/><w:t xml:space=\"preserve\">\(escaped)</w:t></w:r>"
+                    }
+                }
+                .joined()
+
+            return "<w:p>\(runs)</w:p>"
+        }.joined(separator: "")
+
+        let documentXML = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">
+          <w:body>
+            \(bodyXML)
+            <w:sectPr>
+              <w:pgSz w:w="12240" w:h="15840"/>
+              <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
+            </w:sectPr>
+          </w:body>
+        </w:document>
+        """
+
+        let contentTypesXML = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+          <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+          <Default Extension="xml" ContentType="application/xml"/>
+          <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+        </Types>
+        """
+
+        let relsXML = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+        </Relationships>
+        """
+
+        try addArchiveEntry(archive, path: "[Content_Types].xml", data: Data(contentTypesXML.utf8))
+        try addArchiveEntry(archive, path: "_rels/.rels", data: Data(relsXML.utf8))
+        try addArchiveEntry(archive, path: "word/document.xml", data: Data(documentXML.utf8))
+    }
+
+    private static func addArchiveEntry(_ archive: Archive, path: String, data: Data) throws {
+        try archive.addEntry(
+            with: path,
+            type: .file,
+            uncompressedSize: UInt32(data.count),
+            compressionMethod: .deflate
+        ) { position, size in
+            data.subdata(in: position..<position + size)
+        }
+    }
+
+    private static func xmlEscape(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
     }
 }
 
