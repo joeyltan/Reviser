@@ -27,6 +27,9 @@ struct ProjectDetailView: View {
     @State private var sectionHeights: [UUID: CGFloat] = [:]
     @State private var visibleActionSectionIDs: Set<UUID> = []
     @State private var visibleNoteSectionIDs: Set<UUID> = []
+    @State private var visibleNoteOptionsSectionIDs: Set<UUID> = []
+    @State private var visibleResolvedNoteSectionIDs: Set<UUID> = []
+    @State private var revealedResolveNoteKey: String? = nil
     @State private var noteDraftBySection: [UUID: String] = [:]
 
     let projectID: UUID
@@ -124,6 +127,8 @@ struct ProjectDetailView: View {
                     model.noteMode.toggle()
                     if !model.noteMode {
                         visibleNoteSectionIDs.removeAll()
+                        visibleNoteOptionsSectionIDs.removeAll()
+                        visibleResolvedNoteSectionIDs.removeAll()
                     }
                 } label: {
                     Image(systemName: "note.text.badge.plus")
@@ -358,6 +363,7 @@ struct ProjectDetailView: View {
     @ViewBuilder
     private func sectionNotesView(sectionID: UUID) -> some View {
         let notes = sections.first(where: { $0.id == sectionID })?.notes ?? []
+        let resolvedNotes = sections.first(where: { $0.id == sectionID })?.resolvedNotes ?? []
 
         VStack(alignment: .leading, spacing: 8) {
             if notes.isEmpty {
@@ -365,21 +371,50 @@ struct ProjectDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
-                    Text("• \(note)")
-                        .font(.subheadline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(Array(notes.enumerated()), id: \.offset) { noteIndex, note in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("• \(note)")
+                            .font(.subheadline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        let resolveKey = "\(sectionID.uuidString)-\(noteIndex)"
+
+                        Button {
+                            if revealedResolveNoteKey == resolveKey {
+                                resolveNote(sectionID: sectionID, noteIndex: noteIndex)
+                                revealedResolveNoteKey = nil
+                            } else {
+                                revealedResolveNoteKey = resolveKey
+                            }
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.08))
+                                    .frame(width: 28, height: 28)
+
+                                if revealedResolveNoteKey == resolveKey {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help(revealedResolveNoteKey == resolveKey ? "Mark note as resolved" : "Show resolve button")
+                    }
                 }
             }
 
             Button {
-                if visibleNoteSectionIDs.contains(sectionID) {
+                if visibleNoteOptionsSectionIDs.contains(sectionID) {
+                    visibleNoteOptionsSectionIDs.remove(sectionID)
                     visibleNoteSectionIDs.remove(sectionID)
+                    visibleResolvedNoteSectionIDs.remove(sectionID)
                 } else {
-                    visibleNoteSectionIDs.insert(sectionID)
+                    visibleNoteOptionsSectionIDs.insert(sectionID)
                 }
             } label: {
-                Image(systemName: visibleNoteSectionIDs.contains(sectionID) ? "chevron.up" : "chevron.down")
+                Image(systemName: visibleNoteOptionsSectionIDs.contains(sectionID) ? "chevron.up" : "chevron.down")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .padding(6)
@@ -389,8 +424,54 @@ struct ProjectDetailView: View {
                     )
             }
             .buttonStyle(.plain)
-            .help(visibleNoteSectionIDs.contains(sectionID) ? "Hide add note box" : "Show add note box")
+            .help(visibleNoteOptionsSectionIDs.contains(sectionID) ? "Hide note options" : "Show note options")
             .frame(maxWidth: .infinity, alignment: .center)
+
+            if visibleNoteOptionsSectionIDs.contains(sectionID) {
+                HStack(spacing: 12) {
+                    Button {
+                        if visibleNoteSectionIDs.contains(sectionID) {
+                            visibleNoteSectionIDs.remove(sectionID)
+                        } else {
+                            visibleNoteSectionIDs.insert(sectionID)
+                            visibleResolvedNoteSectionIDs.remove(sectionID)
+                        }
+                    } label: {
+                        Label("Add Note", systemImage: "plus.bubble")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        if visibleResolvedNoteSectionIDs.contains(sectionID) {
+                            visibleResolvedNoteSectionIDs.remove(sectionID)
+                        } else {
+                            visibleResolvedNoteSectionIDs.insert(sectionID)
+                            visibleNoteSectionIDs.remove(sectionID)
+                        }
+                    } label: {
+                        Label("Resolved Notes", systemImage: "checkmark")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            if visibleResolvedNoteSectionIDs.contains(sectionID) {
+                if resolvedNotes.isEmpty {
+                    Text("No resolved notes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(resolvedNotes.enumerated()), id: \.offset) { _, note in
+                        Text("• \(note)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
 
             if visibleNoteSectionIDs.contains(sectionID) {
                 HStack(spacing: 8) {
@@ -521,7 +602,9 @@ struct ProjectDetailView: View {
         textViews[id] = nil
         sectionHeights[id] = nil
         caretIndexBySection[id] = nil
+        visibleNoteOptionsSectionIDs.remove(id)
         visibleNoteSectionIDs.remove(id)
+        visibleResolvedNoteSectionIDs.remove(id)
         noteDraftBySection[id] = nil
 
         if activeSectionID == id {
@@ -543,6 +626,15 @@ struct ProjectDetailView: View {
 
         sections[idx].notes.append(draft)
         noteDraftBySection[sectionID] = ""
+    }
+
+    func resolveNote(sectionID: UUID, noteIndex: Int) {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }),
+              sections[idx].notes.indices.contains(noteIndex) else { return }
+
+        let note = sections[idx].notes.remove(at: noteIndex)
+        sections[idx].resolvedNotes.append(note)
+        revealedResolveNoteKey = nil
     }
 }
 
@@ -697,17 +789,20 @@ struct Section: Identifiable, Codable, Equatable {
     let id: UUID
     var text: String
     var notes: [String] = []
+    var resolvedNotes: [String] = []
 
-    init(id: UUID, text: String, notes: [String] = []) {
+    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = []) {
         self.id = id
         self.text = text
         self.notes = notes
+        self.resolvedNotes = resolvedNotes
     }
 
     enum CodingKeys: String, CodingKey {
         case id
         case text
         case notes
+        case resolvedNotes
     }
 
     init(from decoder: Decoder) throws {
@@ -715,11 +810,12 @@ struct Section: Identifiable, Codable, Equatable {
         id = try container.decode(UUID.self, forKey: .id)
         text = try container.decode(String.self, forKey: .text)
         notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
+        resolvedNotes = try container.decodeIfPresent([String].self, forKey: .resolvedNotes) ?? []
     }
 }
 
 struct RestitchedManuscriptPDFDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [restitchedPDFType] }
+    static var readableContentTypes: [UTType] { [.pdf] }
 
     var sections: [String]
 
