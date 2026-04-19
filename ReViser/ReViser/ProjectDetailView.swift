@@ -139,7 +139,7 @@ struct ProjectDetailView: View {
                         .frame(width: 28, height: 28)
                         .foregroundColor(model.noteMode ? .blue : .gray)
                 }
-                .help(model.noteMode ? "Exit notes mode" : "Add notes mode")
+                .help(model.noteMode ? "Exit notes mode" : "Notes mode")
                 Spacer()
             }
             .frame(width: 60)
@@ -537,6 +537,18 @@ struct ProjectDetailView: View {
                             .font(.caption)
                     }
                     .buttonStyle(.plain)
+
+                    Button {
+                        clearAllNotes(in: sectionID)
+                    } label: {
+                        Label("Clear All", systemImage: "xmark")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(
+                        !(sections.first(where: { $0.id == sectionID })?.notes.isEmpty == false ||
+                          sections.first(where: { $0.id == sectionID })?.resolvedNotes.isEmpty == false)
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -714,6 +726,22 @@ struct ProjectDetailView: View {
         let note = sections[idx].notes.remove(at: noteIndex)
         sections[idx].resolvedNotes.append(note)
         revealedResolveNoteKey = nil
+    }
+
+    func clearAllNotes(in sectionID: UUID) {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }) else { return }
+
+        sections[idx].notes.removeAll()
+        sections[idx].resolvedNotes.removeAll()
+        noteDraftBySection[sectionID] = ""
+
+        visibleNoteSectionIDs.remove(sectionID)
+        visibleResolvedNoteSectionIDs.remove(sectionID)
+
+        editingNoteKeys = editingNoteKeys.filter { !$0.hasPrefix("\(sectionID.uuidString)-") }
+        if let key = revealedResolveNoteKey, key.hasPrefix("\(sectionID.uuidString)-") {
+            revealedResolveNoteKey = nil
+        }
     }
 }
 

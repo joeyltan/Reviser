@@ -194,6 +194,15 @@ struct SectionWindowScene: View {
                                             .font(.caption)
                                     }
                                     .buttonStyle(.plain)
+
+                                    Button {
+                                        clearAllNotes()
+                                    } label: {
+                                        Label("Clear All", systemImage: "xmark")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(notes.isEmpty && resolvedNotes.isEmpty)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .center)
                             }
@@ -326,6 +335,26 @@ struct SectionWindowScene: View {
         let projectID = model.projects[projectIndex].id
         model.updateProjectSections(id: projectID, sections: sections)
         editingNoteIndices.removeAll()
+    }
+
+    private func clearAllNotes() {
+        guard let projectIndex = model.projects.firstIndex(where: { $0.sections.contains(where: { $0.id == sectionID }) }),
+              let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }) else {
+            return
+        }
+
+        var sections = model.projects[projectIndex].sections
+        sections[sectionIndex].notes.removeAll()
+        sections[sectionIndex].resolvedNotes.removeAll()
+
+        let projectID = model.projects[projectIndex].id
+        model.updateProjectSections(id: projectID, sections: sections)
+
+        noteDraft = ""
+        showAddNoteBox = false
+        showResolvedNotes = false
+        editingNoteIndices.removeAll()
+        revealedNoteActionIndex = nil
     }
 
     private func noteBinding(noteIndex: Int) -> Binding<String>? {
