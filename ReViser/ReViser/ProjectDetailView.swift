@@ -255,15 +255,28 @@ struct ProjectDetailView: View {
             }
 
             ScrollView {
-                Text(restitchedManuscriptText().isEmpty ? "(Empty project)" : restitchedManuscriptText())
-                    .font(.system(size: 24))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(.secondarySystemBackground))
-                    )
+                let manuscriptText = restitchedManuscriptText()
+                if manuscriptText.isEmpty {
+                    Text("(Empty project)")
+                        .font(.system(size: 24))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(.secondarySystemBackground))
+                        )
+                } else {
+                    Text(LocalizedStringKey(manuscriptText))
+                        .font(.system(size: 24))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(.secondarySystemBackground))
+                        )
+                }
             }
         }
         .padding(24)
@@ -1092,11 +1105,11 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
                 .components(separatedBy: CharacterSet.newlines)
                 .enumerated()
                 .map { index, line in
-                    let escaped = xmlEscape(line)
+                    let formattedRuns = markdownToWordXML(line)
                     if index == 0 {
-                        return "<w:r><w:t xml:space=\"preserve\">\(escaped)</w:t></w:r>"
+                        return formattedRuns
                     } else {
-                        return "<w:r><w:br/><w:t xml:space=\"preserve\">\(escaped)</w:t></w:r>"
+                        return "<w:r><w:br/></w:r>\(formattedRuns)"
                     }
                 }
                 .joined()
@@ -1147,6 +1160,138 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
         ) { position, size in
             data.subdata(in: position..<position + size)
         }
+    }
+
+    private static func markdownToWordXML(_ text: String) -> String {
+        var result = ""
+        var i = text.startIndex
+        var currentText = ""
+        var isBold = false
+        var isItalic = false
+        var isUnderline = false
+        var isStrikethrough = false
+        var isSuperscript = false
+        var isSubscript = false
+        
+        while i < text.endIndex {
+            
+            // Check for strikethrough (~~text~~)
+            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "~" && text[text.index(after: i)] == "~" {
+                if !currentText.isEmpty {
+                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+                    currentText = ""
+                }
+                isStrikethrough.toggle()
+                i = text.index(i, offsetBy: 2)
+                continue
+            }
+            
+            // Check for superscript (^text^)
+            if text[i] == "^" {
+                if !currentText.isEmpty {
+                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+                    currentText = ""
+                }
+                isSuperscript.toggle()
+                i = text.index(after: i)
+                continue
+            }
+            
+            // Check for subscript (_{text})
+            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "_" && text[text.index(after: i)] == "{" {
+                if !currentText.isEmpty {
+                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+                    currentText = ""
+                }
+                isSubscript.toggle()
+                i = text.index(i, offsetBy: text[text.index(after: i)] == "{" ? 2 : 1)
+                continue
+            }
+            
+            if text[i] == "}" && isSubscript {
+                if !currentText.isEmpty {
+                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+                    currentText = ""
+                }
+                isSubscript = false
+                i = text.index(after: i)
+                continue
+            }
+            
+            // Check for bold (**text**)
+            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "*" && text[text.index(after: i)] == "*" {
+                if !currentText.isEmpty {
+                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+                    currentText = ""
+                }
+                isBold.toggle()
+                i = text.index(i, offsetBy: 2)
+                continue
+            }
+            
+            // Check for underline (__text__)
+            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "_" && text[text.index(after: i)] == "_" {
+                if !currentText.isEmpty {
+                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+                    currentText = ""
+                }
+                isUnderline.toggle()
+                i = text.index(i, offsetBy: 2)
+                continue
+            }
+            
+            // Check for italic (*text* or _text_)
+            if (text[i] == "*" || text[i] == "_") && (i == text.startIndex || text[text.index(before: i)] != "\\") {
+                if !currentText.isEmpty {
+                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+                    currentText = ""
+                }
+                isItalic.toggle()
+                i = text.index(after: i)
+                continue
+            }
+            
+            currentText.append(text[i])
+            i = text.index(after: i)
+        }
+        
+        if !currentText.isEmpty {
+            result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
+        }
+        
+        return result
+    }
+    
+    private static func formatRun(_ text: String, bold: Bool, italic: Bool, underline: Bool, strikethrough: Bool, superscript: Bool, subscript_: Bool) -> String {
+        let escaped = xmlEscape(text)
+        var xml = "<w:r>"
+        
+        if (bold || italic || underline || strikethrough || superscript || subscript_
+        ) {
+            xml += "<w:rPr>"
+            if bold {
+                xml += "<w:b/>"
+            }
+            if italic {
+                xml += "<w:i/>"
+            }
+            if underline {
+                xml += "<w:u w:val=\"single\"/>"
+            }
+            if strikethrough {
+                xml += "<w:strike/>"
+            }
+            if superscript {
+                xml += "<w:vertAlign w:val=\"superscript\"/>"
+            }
+            if subscript_ {
+                xml += "<w:vertAlign w:val=\"subscript\"/>"
+            }
+            xml += "</w:rPr>"
+        }
+        
+        xml += "<w:t xml:space=\"preserve\">\(escaped)</w:t></w:r>"
+        return xml
     }
 
     private static func xmlEscape(_ string: String) -> String {
