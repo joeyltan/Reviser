@@ -68,7 +68,7 @@ struct ReViserApp: App {
             SectionsWindowScene()
                 .environment(appModel)
         }
-        .defaultSize(CGSize(width: 1400, height: 900))
+        .defaultSize(CGSize(width: 2800, height: 2000))
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 
@@ -83,6 +83,7 @@ struct ReViserApp: App {
             CompareDraftsView()
                 .environment(appModel)
         }
+        .defaultSize(CGSize(width: 1500, height: 1000))
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 

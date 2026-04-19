@@ -90,7 +90,7 @@ struct SectionsGridView: View {
     
     @Binding var sections: [Section]
     @State private var draggedSectionID: UUID?
-    @State private var expandedSectionID: UUID?
+    @State private var expandedSectionIDs: Set<UUID> = []
     
     var body: some View {
         ScrollView {
@@ -99,10 +99,14 @@ struct SectionsGridView: View {
                     SectionsOverviewCard(
                         index: index,
                         section: $section,
-                        isExpanded: expandedSectionID == section.id,
+                        isExpanded: expandedSectionIDs.contains(section.id),
                         onToggleExpand: {
                             withAnimation {
-                                expandedSectionID = expandedSectionID == section.id ? nil : section.id
+                                if expandedSectionIDs.contains(section.id) {
+                                    expandedSectionIDs.remove(section.id)
+                                } else {
+                                    expandedSectionIDs.insert(section.id)
+                                }
                             }
                         },
                         onDragStart: {
