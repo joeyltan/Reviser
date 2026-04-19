@@ -34,6 +34,21 @@ struct ProjectDetailView: View {
     @State private var editingNoteKeys: Set<String> = []
     @State private var openingAllSectionWindows: Bool = false
     @State private var allSectionWindowsVisible: Bool = false
+    @State private var sectionTags: [UUID: Set<String>] = [:]
+    @State private var taggedTextBySection: [UUID: [String: Set<String>]] = [:]
+    @State private var customTagCategories: Set<String> = []
+    @State private var activeFilterTags: Set<String> = []
+    @State private var showingNewTagAlert: Bool = false
+    @State private var newTagName: String = ""
+    @State private var tagActionSectionID: UUID?
+    @State private var tagActionSectionTags: [String] = []
+    @State private var tagActionTextTags: [String] = []
+    @State private var projectUndoStack: [[Section]] = []
+    @State private var projectRedoStack: [[Section]] = []
+    @State private var hasInitializedSectionHistory: Bool = false
+    @State private var isApplyingUndo: Bool = false
+    @State private var isApplyingRedo: Bool = false
+    @State private var isSyncingSectionsFromModel: Bool = false
 
     let projectID: UUID
 
@@ -48,7 +63,53 @@ struct ProjectDetailView: View {
                     mainContentView(project: project)
                 }
             }
+            .confirmationDialog(
+                "Tag options",
+                isPresented: Binding(
+                    get: { tagActionSectionID != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            tagActionSectionID = nil
+                            tagActionSectionTags = []
+                            tagActionTextTags = []
+                        }
+                    }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let sectionID = tagActionSectionID {
+                    if !tagActionSectionTags.isEmpty {
+                        SwiftUI.Section("Remove section tag") {
+                            ForEach(tagActionSectionTags, id: \.self) { tag in
+                                Button("Delete \(tag)", role: .destructive) {
+                                    removeSectionTag(tag, from: sectionID)
+                                }
+                            }
+                        }
+                    }
+
+                    if !tagActionSectionTags.isEmpty && !tagActionTextTags.isEmpty {
+                        Divider()
+                    }
+
+                    if !tagActionTextTags.isEmpty {
+                        SwiftUI.Section("Remove text tag") {
+                            ForEach(tagActionTextTags, id: \.self) { tag in
+                                Button("Delete \(tag)", role: .destructive) {
+                                    removeTextTag(tag, from: sectionID)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             .onAppear {
+                projectUndoStack.removeAll()
+                projectRedoStack.removeAll()
+                hasInitializedSectionHistory = false
+                isApplyingUndo = false
+                isApplyingRedo = false
+                isSyncingSectionsFromModel = true
                 initializeSections(from: project)
                 windowMode = model.isSectionsWindowOpen
             }
@@ -67,10 +128,34 @@ struct ProjectDetailView: View {
                     windowMode = isOpen
                 }
             }
-            .onChange(of: sections) { _, newSections in
+            .onChange(of: sections) { oldSections, newSections in
+                if !hasInitializedSectionHistory {
+                    hasInitializedSectionHistory = true
+                } else if !isApplyingUndo && !isApplyingRedo && !isSyncingSectionsFromModel && oldSections != newSections {
+                    projectUndoStack.append(oldSections)
+                    projectRedoStack.removeAll()
+                    if projectUndoStack.count > 200 {
+                        projectUndoStack.removeFirst(projectUndoStack.count - 200)
+                    }
+                }
+
+                if isApplyingUndo {
+                    isApplyingUndo = false
+                }
+
+                if isApplyingRedo {
+                    isApplyingRedo = false
+                }
+
+                if isSyncingSectionsFromModel {
+                    isSyncingSectionsFromModel = false
+                }
+
                 model.updateProjectSections(id: projectID, sections: newSections)
             }
             .onChange(of: project.sections) { _, updatedSections in
+                guard updatedSections != sections else { return }
+                isSyncingSectionsFromModel = true
                 sections = updatedSections
             }
             // .fileExporter(
@@ -95,6 +180,33 @@ struct ProjectDetailView: View {
         if showToolbar {
             VStack {
                 Button {
+                    undoLastProjectChange()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(projectUndoStack.isEmpty ? .gray : .white)
+                }
+                .disabled(projectUndoStack.isEmpty)
+                .help("Undo last change")
+
+                Button {
+                    redoLastProjectChange()
+                } label: {
+                    Image(systemName: "arrow.uturn.forward")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(projectRedoStack.isEmpty ? .gray : .white)
+                }
+                .disabled(projectRedoStack.isEmpty)
+                .help("Redo last undone change")
+
+                Spacer()
+                    .frame(height: 14)
+
+                Button {
                     splitAtCurrentCaret()
                 } label: {
                     Image("scissors", bundle: .radixUI)
@@ -104,6 +216,7 @@ struct ProjectDetailView: View {
                         .foregroundColor(splitMode ? .blue : .gray)
                 }
                 .help("Split text")
+
                 Button {
                     windowMode.toggle()
                 } label: {
@@ -113,7 +226,7 @@ struct ProjectDetailView: View {
                         .frame(width: 28, height: 28)
                         .foregroundColor(windowMode ? .blue : .gray)
                 }
-                .help("Window section mode")
+                .help("Reorder and view section overview")
 
                 Button {
                     openAllSectionsInWindows()
@@ -188,6 +301,95 @@ struct ProjectDetailView: View {
                 }
                 .help("Text styling options")
 
+                Menu {
+                    // Tagging section
+                    if !customTagCategories.isEmpty {
+                        SwiftUI.Section("Tags") {
+                            ForEach(customTagCategories.sorted(), id: \.self) { tag in
+                                Button {
+                                    toggleTagOnActiveSection(tag)
+                                } label: {
+                                    HStack {
+                                        Text(tag)
+                                        
+                                        if isTagAppliedInActiveContext(tag) {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Divider()
+                    }
+                    
+                    // New tag button
+                    Button(action: {
+                        showingNewTagAlert = true
+                    }) {
+                        Label("Add New Tag Category", systemImage: "plus")
+                    }
+                    
+                    Divider()
+                    
+                    // Filter section
+                    if !customTagCategories.isEmpty {
+                        Menu {
+                            Button {
+                                activeFilterTags.removeAll()
+                            } label: {
+                                HStack {
+                                    Text("Clear Filters")
+                                }
+                            }
+                            .disabled(activeFilterTags.isEmpty)
+
+                            Divider()
+
+                            ForEach(customTagCategories.sorted(), id: \.self) { tag in
+                                Button {
+                                    if activeFilterTags.contains(tag) {
+                                        activeFilterTags.remove(tag)
+                                    } else {
+                                        activeFilterTags.insert(tag)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(tag)
+                                        if activeFilterTags.contains(tag) {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Filter", systemImage: "line.3.horizontal.decrease.circle")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "tag.fill")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(activeFilterTags.isEmpty ? .gray : .blue)
+                }
+                .help("Tag and filter sections")
+                .alert("New Tag Category", isPresented: $showingNewTagAlert) {
+                    TextField("Tag name", text: $newTagName)
+                    Button("Cancel", role: .cancel) {
+                        newTagName = ""
+                    }
+                    Button("Add") {
+                        let trimmed = newTagName.trimmingCharacters(in: .whitespaces)
+                        if !trimmed.isEmpty && !customTagCategories.contains(trimmed) {
+                            customTagCategories.insert(trimmed)
+                        }
+                        newTagName = ""
+                    }
+                } message: {
+                    Text("Enter a name for the new tag category")
+                }
+
                 Spacer()
             }
             .frame(width: 60)
@@ -211,7 +413,12 @@ struct ProjectDetailView: View {
         ZStack(alignment: .topLeading) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                    let filteredSections = sections.enumerated().filter { _, section in
+                        let tagsForSection = allTags(for: section.id)
+                        return activeFilterTags.isEmpty || activeFilterTags.isSubset(of: tagsForSection)
+                    }
+
+                    ForEach(Array(filteredSections), id: \.element.id) { index, section in
                         sectionView(section: section, index: index)
                     }
                 }
@@ -320,8 +527,22 @@ struct ProjectDetailView: View {
     func sectionView(section: Section, index: Int) -> some View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 12) {
+                let sectionLevelTags = sectionLevelTags(for: section.id)
+                let textLevelTags = textLevelTags(for: section.id)
+                let textTaggedSnippets = Set(taggedTextBySection[section.id]?.keys.map { $0 } ?? [])
+                let hasSectionTags = !sectionLevelTags.isEmpty
+                let hasTextTags = !textLevelTags.isEmpty
+                let hasTags = hasSectionTags || hasTextTags
+                let tooltipText = [
+                    hasSectionTags ? "Section tags: \(sectionLevelTags.sorted().joined(separator: ", "))" : nil,
+                    hasTextTags ? "Text tags: \(textLevelTags.sorted().joined(separator: ", "))" : nil
+                ]
+                    .compactMap { $0 }
+                    .joined(separator: "\n")
+
                 TextKitView(
                     text: binding(for: section),
+                    highlightedSnippets: textTaggedSnippets,
                     splitMode: splitMode,
                     snappedY: $snappedY,
                     onSplit: { y in
@@ -342,6 +563,36 @@ struct ProjectDetailView: View {
                 .multilineTextAlignment(.leading)
                 .frame(height: sectionHeights[section.id] ?? 100)
                 .frame(maxWidth: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if hasTags {
+                        Button {
+                            presentTagActions(for: section.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                if hasSectionTags {
+                                    Image(systemName: "tag.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.blue)
+                                }
+
+                                if hasTextTags {
+                                    Image(systemName: "text.badge.checkmark")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.secondary.opacity(0.12))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help(tooltipText)
+                        .offset(x: -36, y: 8)
+                    }
+                }
 
                 if model.noteMode {
                     sectionNotesView(sectionID: section.id)
@@ -737,6 +988,80 @@ struct ProjectDetailView: View {
         }
     }
 
+    func undoLastProjectChange() {
+        guard let previousSections = projectUndoStack.popLast() else { return }
+
+        projectRedoStack.append(sections)
+        if projectRedoStack.count > 200 {
+            projectRedoStack.removeFirst(projectRedoStack.count - 200)
+        }
+
+        isApplyingUndo = true
+        sections = previousSections
+
+        let validIDs = Set(sections.map(\.id))
+        if let activeSectionID, !validIDs.contains(activeSectionID) {
+            self.activeSectionID = sections.first?.id
+        }
+
+        textViews = textViews.filter { validIDs.contains($0.key) }
+        sectionHeights = sectionHeights.filter { validIDs.contains($0.key) }
+        caretIndexBySection = caretIndexBySection.filter { validIDs.contains($0.key) }
+        visibleActionSectionIDs = visibleActionSectionIDs.intersection(validIDs)
+        visibleNoteSectionIDs = visibleNoteSectionIDs.intersection(validIDs)
+        visibleNoteOptionsSectionIDs = visibleNoteOptionsSectionIDs.intersection(validIDs)
+        visibleResolvedNoteSectionIDs = visibleResolvedNoteSectionIDs.intersection(validIDs)
+        noteDraftBySection = noteDraftBySection.filter { validIDs.contains($0.key) }
+        sectionTags = sectionTags.filter { validIDs.contains($0.key) }
+        taggedTextBySection = taggedTextBySection.filter { validIDs.contains($0.key) }
+
+        editingNoteKeys = editingNoteKeys.filter { noteKey in
+            validIDs.contains { id in noteKey.hasPrefix("\(id.uuidString)-") }
+        }
+
+        if let key = revealedResolveNoteKey,
+           !validIDs.contains(where: { key.hasPrefix("\($0.uuidString)-") }) {
+            revealedResolveNoteKey = nil
+        }
+    }
+
+    func redoLastProjectChange() {
+        guard let nextSections = projectRedoStack.popLast() else { return }
+
+        projectUndoStack.append(sections)
+        if projectUndoStack.count > 200 {
+            projectUndoStack.removeFirst(projectUndoStack.count - 200)
+        }
+
+        isApplyingRedo = true
+        sections = nextSections
+
+        let validIDs = Set(sections.map(\.id))
+        if let activeSectionID, !validIDs.contains(activeSectionID) {
+            self.activeSectionID = sections.first?.id
+        }
+
+        textViews = textViews.filter { validIDs.contains($0.key) }
+        sectionHeights = sectionHeights.filter { validIDs.contains($0.key) }
+        caretIndexBySection = caretIndexBySection.filter { validIDs.contains($0.key) }
+        visibleActionSectionIDs = visibleActionSectionIDs.intersection(validIDs)
+        visibleNoteSectionIDs = visibleNoteSectionIDs.intersection(validIDs)
+        visibleNoteOptionsSectionIDs = visibleNoteOptionsSectionIDs.intersection(validIDs)
+        visibleResolvedNoteSectionIDs = visibleResolvedNoteSectionIDs.intersection(validIDs)
+        noteDraftBySection = noteDraftBySection.filter { validIDs.contains($0.key) }
+        sectionTags = sectionTags.filter { validIDs.contains($0.key) }
+        taggedTextBySection = taggedTextBySection.filter { validIDs.contains($0.key) }
+
+        editingNoteKeys = editingNoteKeys.filter { noteKey in
+            validIDs.contains { id in noteKey.hasPrefix("\(id.uuidString)-") }
+        }
+
+        if let key = revealedResolveNoteKey,
+           !validIDs.contains(where: { key.hasPrefix("\($0.uuidString)-") }) {
+            revealedResolveNoteKey = nil
+        }
+    }
+
     func deleteSection(id: UUID) {
         guard let index = sections.firstIndex(where: { $0.id == id }) else { return }
 
@@ -893,6 +1218,111 @@ struct ProjectDetailView: View {
         let newPosition = selectedRange.location + styledText.count
         textView.selectedRange = NSRange(location: newPosition, length: 0)
     }
+
+    func toggleTagOnActiveSection(_ tag: String) {
+        guard let activeSectionID = activeSectionID else { return }
+
+        if let selectedText = currentlySelectedText(in: activeSectionID), !selectedText.isEmpty {
+            if taggedTextBySection[activeSectionID] == nil {
+                taggedTextBySection[activeSectionID] = [:]
+            }
+
+            if taggedTextBySection[activeSectionID]?[selectedText] == nil {
+                taggedTextBySection[activeSectionID]?[selectedText] = []
+            }
+
+            if taggedTextBySection[activeSectionID]?[selectedText]?.contains(tag) == true {
+                taggedTextBySection[activeSectionID]?[selectedText]?.remove(tag)
+
+                if taggedTextBySection[activeSectionID]?[selectedText]?.isEmpty == true {
+                    taggedTextBySection[activeSectionID]?.removeValue(forKey: selectedText)
+                }
+
+                if taggedTextBySection[activeSectionID]?.isEmpty == true {
+                    taggedTextBySection[activeSectionID] = nil
+                }
+            } else {
+                taggedTextBySection[activeSectionID]?[selectedText]?.insert(tag)
+            }
+        } else {
+            if sectionTags[activeSectionID]?.contains(tag) == true {
+                sectionTags[activeSectionID]?.remove(tag)
+            } else {
+                if sectionTags[activeSectionID] == nil {
+                    sectionTags[activeSectionID] = []
+                }
+                sectionTags[activeSectionID]?.insert(tag)
+            }
+        }
+    }
+
+    func currentlySelectedText(in sectionID: UUID) -> String? {
+        guard let textView = textViews[sectionID],
+              let index = sections.firstIndex(where: { $0.id == sectionID }) else { return nil }
+
+        let selectedRange = textView.selectedRange
+        guard selectedRange.length > 0 else { return nil }
+
+        let text = sections[index].text as NSString
+        guard selectedRange.location + selectedRange.length <= text.length else { return nil }
+
+        let selectedText = text.substring(with: selectedRange).trimmingCharacters(in: .whitespacesAndNewlines)
+        return selectedText.isEmpty ? nil : selectedText
+    }
+
+    func allTags(for sectionID: UUID) -> Set<String> {
+        sectionLevelTags(for: sectionID).union(textLevelTags(for: sectionID))
+    }
+
+    func sectionLevelTags(for sectionID: UUID) -> Set<String> {
+        sectionTags[sectionID] ?? []
+    }
+
+    func textLevelTags(for sectionID: UUID) -> Set<String> {
+        Set(taggedTextBySection[sectionID]?.values.flatMap { $0 } ?? [])
+    }
+
+    func isTagAppliedInActiveContext(_ tag: String) -> Bool {
+        guard let activeSectionID = activeSectionID else { return false }
+
+        if let selectedText = currentlySelectedText(in: activeSectionID),
+           let tagsForSelection = taggedTextBySection[activeSectionID]?[selectedText] {
+            return tagsForSelection.contains(tag)
+        }
+
+        return allTags(for: activeSectionID).contains(tag)
+    }
+
+    func presentTagActions(for sectionID: UUID) {
+        let sectionTags = sectionLevelTags(for: sectionID).sorted()
+        let textTags = textLevelTags(for: sectionID).sorted()
+        guard !sectionTags.isEmpty || !textTags.isEmpty else { return }
+
+        tagActionSectionID = sectionID
+        tagActionSectionTags = sectionTags
+        tagActionTextTags = textTags
+    }
+
+    func removeSectionTag(_ tag: String, from sectionID: UUID) {
+        guard sectionTags[sectionID]?.contains(tag) == true else { return }
+
+        sectionTags[sectionID]?.remove(tag)
+        if sectionTags[sectionID]?.isEmpty == true {
+            sectionTags[sectionID] = nil
+        }
+    }
+
+    func removeTextTag(_ tag: String, from sectionID: UUID) {
+        guard var snippets = taggedTextBySection[sectionID] else { return }
+
+        for key in snippets.keys {
+            snippets[key]?.remove(tag)
+        }
+
+        snippets = snippets.filter { !$0.value.isEmpty }
+        taggedTextBySection[sectionID] = snippets.isEmpty ? nil : snippets
+    }
+
 }
 
 
@@ -971,6 +1401,7 @@ struct SectionWindowCard: View {
 
 struct TextKitView: UIViewRepresentable {
     @Binding var text: String
+    var highlightedSnippets: Set<String> = []
     var splitMode: Bool
     @Binding var snappedY: CGFloat
     var onSplit: (CGFloat) -> Void
@@ -1005,9 +1436,14 @@ struct TextKitView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UITextView, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
+        let selectedRange = uiView.selectedRange
+        uiView.attributedText = makeAttributedText(from: text)
+
+        let clampedLocation = min(selectedRange.location, uiView.attributedText.length)
+        let maxLength = max(0, uiView.attributedText.length - clampedLocation)
+        let clampedLength = min(selectedRange.length, maxLength)
+        uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
+
 //        context.coordinator.splitMode = splitMode
 //        uiView.isEditable = true
 //        uiView.isSelectable = true
@@ -1022,6 +1458,37 @@ struct TextKitView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+
+    private func makeAttributedText(from text: String) -> NSAttributedString {
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        let attributed = NSMutableAttributedString(string: text)
+        attributed.addAttributes([
+            .font: UIFont.systemFont(ofSize: 25),
+            .foregroundColor: UIColor.label
+        ], range: fullRange)
+
+        for snippet in highlightedSnippets where !snippet.isEmpty {
+            let nsText = text as NSString
+            var searchRange = NSRange(location: 0, length: nsText.length)
+
+            while true {
+                let found = nsText.range(of: snippet, options: [], range: searchRange)
+                if found.location == NSNotFound { break }
+
+                attributed.addAttribute(
+                    .backgroundColor,
+                    value: UIColor.systemOrange.withAlphaComponent(0.30),
+                    range: found
+                )
+
+                let nextStart = found.location + found.length
+                if nextStart >= nsText.length { break }
+                searchRange = NSRange(location: nextStart, length: nsText.length - nextStart)
+            }
+        }
+
+        return attributed
     }
 
     class Coordinator: NSObject, UITextViewDelegate {

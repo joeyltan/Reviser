@@ -115,7 +115,7 @@ struct SectionsWindowScene: View {
 }
 
 struct SectionsGridView: View {
-    private let minimumCardWidth: CGFloat = 420
+    private let minimumCardWidth: CGFloat = 520
     private let gridSpacing: CGFloat = 24
     private let horizontalInsets: CGFloat = 48
     private let verticalInsets: CGFloat = 48
