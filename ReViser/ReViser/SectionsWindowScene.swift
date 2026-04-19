@@ -5,6 +5,25 @@ extension UTType {
     static let sectionReorder = UTType(exportedAs: "com.reviser.section-reorder")
 }
 
+enum SectionsOverviewOrder {
+    case row
+    case column
+
+    var label: String {
+        switch self {
+        case .row: return "Left to right"
+        case .column: return "Top to bottom"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .row: return "arrow.left.arrow.right"
+        case .column: return "arrow.up.arrow.down"
+        }
+    }
+}
+
 struct SectionsWindowScene: View {
     @Environment(AppModel.self) var model
     @Environment(\.dismissWindow) private var dismissWindow
@@ -14,12 +33,13 @@ struct SectionsWindowScene: View {
     @State private var currentProjectID: UUID?
     @State private var savedSectionOrder: [UUID] = []
     @State private var hasPendingReorder: Bool = false
+    @State private var overviewOrder: SectionsOverviewOrder = .row
     
     var body: some View {
         Group {
             if currentProjectID != nil {
                 NavigationStack {
-                    SectionsGridView(sections: $sections)
+                    SectionsGridView(sections: $sections, overviewOrder: $overviewOrder)
                         .navigationTitle("Sections")
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
@@ -29,6 +49,15 @@ struct SectionsWindowScene: View {
                                 } label: {
                                     Label("Return to Text", systemImage: "arrow.left.circle")
                                 }
+                            }
+
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    overviewOrder = overviewOrder == .row ? .column : .row
+                                } label: {
+                                    Label(overviewOrder.label, systemImage: overviewOrder.systemImage)
+                                }
+                                .help("Switch section ordering")
                             }
 
                             ToolbarItem(placement: .topBarTrailing) {
@@ -86,56 +115,127 @@ struct SectionsWindowScene: View {
 }
 
 struct SectionsGridView: View {
-    static let columns: [GridItem] = [GridItem(.adaptive(minimum: 420), spacing: 24)]
+    private let minimumCardWidth: CGFloat = 420
+    private let gridSpacing: CGFloat = 24
+    private let horizontalInsets: CGFloat = 48
+    private let verticalInsets: CGFloat = 48
+    private let estimatedCardHeight: CGFloat = 220
     
     @Binding var sections: [Section]
+    @Binding var overviewOrder: SectionsOverviewOrder
     @State private var draggedSectionID: UUID?
     @State private var expandedSectionIDs: Set<UUID> = []
     
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: Self.columns, spacing: 24) {
-                ForEach(Array($sections.enumerated()), id: \.element.id) { index, $section in
-                    SectionsOverviewCard(
-                        index: index,
-                        section: $section,
-                        isExpanded: expandedSectionIDs.contains(section.id),
-                        onToggleExpand: {
-                            withAnimation {
-                                if expandedSectionIDs.contains(section.id) {
-                                    expandedSectionIDs.remove(section.id)
-                                } else {
-                                    expandedSectionIDs.insert(section.id)
-                                }
-                            }
-                        },
-                        onDragStart: {
-                            draggedSectionID = section.id
+        GeometryReader { proxy in
+            let preferredRows = computedPreferredRows(for: proxy.size.height)
+            let columnsCount = computedColumns(
+                for: proxy.size.width,
+                count: sections.count,
+                preferredRows: preferredRows
+            )
+            let gridItems = computedGridItems(columnsCount: columnsCount)
+            let displayIndices = orderedIndices(count: sections.count, columns: columnsCount)
 
-                            let provider = NSItemProvider()
-                            provider.registerDataRepresentation(
-                                forTypeIdentifier: UTType.sectionReorder.identifier,
-                                visibility: .all
-                            ) { completion in
-                                completion(Data(), nil)
-                                return nil
-                            }
-                            return provider
-                        }
-                    )
-                    .opacity(draggedSectionID == section.id ? 0.6 : 1.0)
-                        .onDrop(
-                            of: [UTType.sectionReorder],
-                            delegate: SectionReorderDropDelegate(
-                                targetSection: section,
-                                sections: $sections,
-                                draggedSectionID: $draggedSectionID
-                            )
-                        )
+            ScrollView {
+                LazyVGrid(columns: gridItems, spacing: gridSpacing) {
+                    ForEach(displayIndices, id: \.self) { index in
+                        sectionCard(at: index)
+                    }
+                }
+                .padding(24)
+            }
+        }
+    }
+
+    private func computedColumns(for width: CGFloat, count: Int, preferredRows: Int) -> Int {
+        let availableWidth = max(width - horizontalInsets, minimumCardWidth)
+        let columnWidth = minimumCardWidth + gridSpacing
+        let maxColumnsByWidth = max(1, Int((availableWidth + gridSpacing) / columnWidth))
+
+        if overviewOrder == .row {
+            return maxColumnsByWidth
+        }
+
+        // In column mode, target vertical fill first, then clamp to available width.
+        let neededColumnsForPreferredRows = max(1, Int(ceil(Double(max(count, 1)) / Double(max(preferredRows, 1)))))
+        return min(maxColumnsByWidth, neededColumnsForPreferredRows)
+    }
+
+    private func computedGridItems(columnsCount: Int) -> [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(minimum: minimumCardWidth), spacing: gridSpacing),
+            count: max(1, columnsCount)
+        )
+    }
+
+    private func computedPreferredRows(for height: CGFloat) -> Int {
+        let availableHeight = max(height - verticalInsets, estimatedCardHeight)
+        return max(1, Int((availableHeight + gridSpacing) / (estimatedCardHeight + gridSpacing)))
+    }
+
+    @ViewBuilder
+    private func sectionCard(at index: Int) -> some View {
+        let section = sections[index]
+        let isExpanded = expandedSectionIDs.contains(section.id)
+
+        SectionsOverviewCard(
+            index: index,
+            section: $sections[index],
+            isExpanded: isExpanded,
+            onToggleExpand: {
+                withAnimation {
+                    if expandedSectionIDs.contains(section.id) {
+                        expandedSectionIDs.remove(section.id)
+                    } else {
+                        expandedSectionIDs.insert(section.id)
+                    }
+                }
+            },
+            onDragStart: {
+                draggedSectionID = section.id
+
+                let provider = NSItemProvider()
+                provider.registerDataRepresentation(
+                    forTypeIdentifier: UTType.sectionReorder.identifier,
+                    visibility: .all
+                ) { completion in
+                    completion(Data(), nil)
+                    return nil
+                }
+                return provider
+            }
+        )
+        .opacity(draggedSectionID == section.id ? 0.6 : 1.0)
+        .onDrop(
+            of: [UTType.sectionReorder],
+            delegate: SectionReorderDropDelegate(
+                targetSection: section,
+                sections: $sections,
+                draggedSectionID: $draggedSectionID
+            )
+        )
+    }
+
+    private func orderedIndices(count: Int, columns: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        if overviewOrder == .row {
+            return Array(0..<count)
+        }
+
+        let rowCount = Int(ceil(Double(count) / Double(columns)))
+        var result: [Int] = []
+        result.reserveCapacity(count)
+
+        for row in 0..<rowCount {
+            for column in 0..<columns {
+                let index = (column * rowCount) + row
+                if index < count {
+                    result.append(index)
                 }
             }
-            .padding(24)
         }
+        return result
     }
 }
 
