@@ -131,7 +131,7 @@ class AppModel {
             projects[i].sections = sections
             projects[i].text = sections
                 .map(\.text)
-                .joined(separator: "\n\n")
+                .joined(separator: "")
             projects[i].lastModified = .now
         }
     }
@@ -139,7 +139,7 @@ class AppModel {
     func previewText(for project: Project, limit: Int = 200) -> String {
         let sectionsText = project.sections
             .map(\.text)
-            .joined(separator: "\n\n")
+            .joined(separator: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         let source = sectionsText.isEmpty ? project.text : sectionsText

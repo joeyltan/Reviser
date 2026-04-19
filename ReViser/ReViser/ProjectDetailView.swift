@@ -31,6 +31,7 @@ struct ProjectDetailView: View {
     @State private var visibleResolvedNoteSectionIDs: Set<UUID> = []
     @State private var revealedResolveNoteKey: String? = nil
     @State private var noteDraftBySection: [UUID: String] = [:]
+    @State private var editingNoteKeys: Set<String> = []
 
     let projectID: UUID
 
@@ -129,6 +130,7 @@ struct ProjectDetailView: View {
                         visibleNoteSectionIDs.removeAll()
                         visibleNoteOptionsSectionIDs.removeAll()
                         visibleResolvedNoteSectionIDs.removeAll()
+                        editingNoteKeys.removeAll()
                     }
                 } label: {
                     Image(systemName: "note.text.badge.plus")
@@ -252,7 +254,7 @@ struct ProjectDetailView: View {
         }
         .padding(24)
     }
-    
+
     @ViewBuilder
     func sectionView(section: Section, index: Int) -> some View {
         HStack(alignment: .top, spacing: 8) {
@@ -359,11 +361,12 @@ struct ProjectDetailView: View {
             .padding(.leading, 8)
         }
     }
-
+    
     @ViewBuilder
     private func sectionNotesView(sectionID: UUID) -> some View {
-        let notes = sections.first(where: { $0.id == sectionID })?.notes ?? []
-        let resolvedNotes = sections.first(where: { $0.id == sectionID })?.resolvedNotes ?? []
+        let sectionIndex = sections.firstIndex(where: { $0.id == sectionID })
+        let notes = sectionIndex.map { sections[$0].notes } ?? []
+        let resolvedNotes = sectionIndex.map { sections[$0].resolvedNotes } ?? []
 
         VStack(alignment: .leading, spacing: 8) {
             if notes.isEmpty {
@@ -371,36 +374,116 @@ struct ProjectDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(notes.enumerated()), id: \.offset) { noteIndex, note in
+                ForEach(Array(notes.indices), id: \.self) { noteIndex in
+                    let noteKey = "\(sectionID.uuidString)-\(noteIndex)"
+                    let resolveKey = "\(sectionID.uuidString)-\(noteIndex)"
+
                     HStack(alignment: .top, spacing: 8) {
-                        Text("• \(note)")
+                        Text("•")
                             .font(.subheadline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .foregroundStyle(.secondary)
 
-                        let resolveKey = "\(sectionID.uuidString)-\(noteIndex)"
+                        if let sectionIndex, editingNoteKeys.contains(noteKey) {
+                            let currentIndex = sectionIndex
+                            let binding: Binding<String> = Binding(
+                                get: {
+                                guard sections.indices.contains(currentIndex),
+                                    sections[currentIndex].notes.indices.contains(noteIndex) else { return "" }
+                                return sections[currentIndex].notes[noteIndex]
+                                },
+                                set: { newValue in
+                                guard sections.indices.contains(currentIndex),
+                                    sections[currentIndex].notes.indices.contains(noteIndex) else { return }
+                                sections[currentIndex].notes[noteIndex] = newValue
+                                }
+                            )
+                            TextField("Edit note", text: binding)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.subheadline)
+                        } else {
+                            Text(notes[noteIndex])
+                                .font(.subheadline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
 
-                        Button {
+                        HStack(spacing: 6) {
                             if revealedResolveNoteKey == resolveKey {
-                                resolveNote(sectionID: sectionID, noteIndex: noteIndex)
-                                revealedResolveNoteKey = nil
-                            } else {
-                                revealedResolveNoteKey = resolveKey
-                            }
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.secondary.opacity(0.08))
-                                    .frame(width: 28, height: 28)
+                                Button {
+                                    if editingNoteKeys.contains(noteKey) {
+                                        editingNoteKeys.remove(noteKey)
+                                    } else {
+                                        editingNoteKeys.insert(noteKey)
+                                    }
+                                } label: {
+                                    Group {
+                                        if editingNoteKeys.contains(noteKey) {
+                                            Text("Save")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Image(systemName: "pencil")
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .frame(width: 44, height: 28)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(Color.secondary.opacity(0.08))
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .help(editingNoteKeys.contains(noteKey) ? "Save edit" : "Edit note")
 
+                                Button {
+                                    resolveNote(sectionID: sectionID, noteIndex: noteIndex)
+                                    revealedResolveNoteKey = nil
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.secondary.opacity(0.08))
+                                            .frame(width: 28, height: 28)
+
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .help("Mark note as resolved")
+                            }
+
+                            Spacer(minLength: 0)
+
+                            Button {
                                 if revealedResolveNoteKey == resolveKey {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 16))
-                                        .foregroundStyle(.secondary)
+                                    revealedResolveNoteKey = nil
+                                } else {
+                                    revealedResolveNoteKey = resolveKey
+                                }
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.secondary.opacity(0.18))
+                                        .frame(width: 28, height: 28)
+
+                                    // Image(systemName: revealedResolveNoteKey == resolveKey ? "chevron.up" : "chevron.down")
+                                    //     .font(.system(size: 12, weight: .semibold))
+                                    //     .foregroundStyle(.secondary)
                                 }
                             }
+                            .buttonStyle(.plain)
+                            .help(revealedResolveNoteKey == resolveKey ? "Hide note actions" : "Show note actions")
                         }
-                        .buttonStyle(.plain)
-                        .help(revealedResolveNoteKey == resolveKey ? "Mark note as resolved" : "Show resolve button")
+                        .frame(width: 120, alignment: .trailing)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if revealedResolveNoteKey == resolveKey {
+                            revealedResolveNoteKey = nil
+                        } else {
+                            revealedResolveNoteKey = resolveKey
+                        }
                     }
                 }
             }
@@ -475,14 +558,12 @@ struct ProjectDetailView: View {
 
             if visibleNoteSectionIDs.contains(sectionID) {
                 HStack(spacing: 8) {
-                    TextField(
-                        "Add a note to this section",
-                        text: Binding(
-                            get: { noteDraftBySection[sectionID] ?? "" },
-                            set: { noteDraftBySection[sectionID] = $0 }
-                        )
+                    let draftBinding: Binding<String> = Binding(
+                        get: { noteDraftBySection[sectionID] ?? "" },
+                        set: { noteDraftBySection[sectionID] = $0 }
                     )
-                    .textFieldStyle(.roundedBorder)
+                    TextField("Add a note to this section", text: draftBinding)
+                        .textFieldStyle(.roundedBorder)
 
                     Button("Add") {
                         addNote(to: sectionID)
@@ -492,11 +573,6 @@ struct ProjectDetailView: View {
                 }
             }
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.secondary.opacity(0.08))
-        )
     }
     
     func binding(for section: Section) -> Binding<String> {
@@ -606,6 +682,7 @@ struct ProjectDetailView: View {
         visibleNoteSectionIDs.remove(id)
         visibleResolvedNoteSectionIDs.remove(id)
         noteDraftBySection[id] = nil
+        editingNoteKeys = editingNoteKeys.filter { !$0.hasPrefix("\(id.uuidString)-") }
 
         if activeSectionID == id {
             activeSectionID = sections.first?.id
@@ -631,6 +708,8 @@ struct ProjectDetailView: View {
     func resolveNote(sectionID: UUID, noteIndex: Int) {
         guard let idx = sections.firstIndex(where: { $0.id == sectionID }),
               sections[idx].notes.indices.contains(noteIndex) else { return }
+
+        editingNoteKeys = editingNoteKeys.filter { !$0.hasPrefix("\(sectionID.uuidString)-") }
 
         let note = sections[idx].notes.remove(at: noteIndex)
         sections[idx].resolvedNotes.append(note)

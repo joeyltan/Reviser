@@ -46,6 +46,13 @@ struct ReViserApp: App {
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 
+        WindowGroup(id: "compare-window") {
+            CompareDraftsView()
+                .environment(appModel)
+        }
+        .windowStyle(.automatic)
+        .windowResizability(.automatic)
+
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView()
                 .environment(appModel)

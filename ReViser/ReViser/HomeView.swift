@@ -77,6 +77,12 @@ struct HomeView: View {
                 }
 
                 Button {
+                    openWindow(id: "compare-window")
+                } label: {
+                    Label("Compare Drafts", systemImage: "rectangle.2.swap")
+                }
+
+                Button {
                     openWindow(id: "graveyard-window")
                 } label: {
                     Label {
@@ -119,6 +125,193 @@ struct HomeView: View {
         }
     }
     
+}
+
+enum DraftComparisonMode: String, CaseIterable, Identifiable {
+    case sectioned
+    case unsectioned
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sectioned: return "Sectioned"
+        case .unsectioned: return "Unsectioned"
+        }
+    }
+}
+
+struct CompareDraftsView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var leftProjectID: UUID?
+    @State private var rightProjectID: UUID?
+    @State private var leftMode: DraftComparisonMode = .sectioned
+    @State private var rightMode: DraftComparisonMode = .unsectioned
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if model.projects.isEmpty {
+                    ContentUnavailableView(
+                        "No Projects",
+                        systemImage: "doc.on.doc",
+                        description: Text("Import two projects to compare drafts.")
+                    )
+                } else {
+                    GeometryReader { proxy in
+                        let sideWidth = max(320, (proxy.size.width - 72) / 2)
+
+                        ScrollView(.horizontal) {
+                            HStack(alignment: .top, spacing: 24) {
+                                compareColumn(
+                                    title: "Left Draft",
+                                    projectID: leftProjectID,
+                                    mode: $leftMode,
+                                    width: sideWidth,
+                                    onChooseProject: { leftProjectID = $0 }
+                                )
+
+                                compareColumn(
+                                    title: "Right Draft",
+                                    projectID: rightProjectID,
+                                    mode: $rightMode,
+                                    width: sideWidth,
+                                    onChooseProject: { rightProjectID = $0 }
+                                )
+                            }
+                            .padding(24)
+                        }
+                        .scrollIndicators(.visible)
+                    }
+                }
+            }
+            .navigationTitle("Compare Drafts")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .onAppear {
+            initializeSelectionIfNeeded()
+        }
+        .task(id: model.projects.map { $0.id }) {
+            initializeSelectionIfNeeded()
+        }
+    }
+
+    private func initializeSelectionIfNeeded() {
+        guard !model.projects.isEmpty else { return }
+
+        if leftProjectID == nil {
+            leftProjectID = model.projects.first?.id
+        }
+
+        if rightProjectID == nil {
+            rightProjectID = model.projects.dropFirst().first?.id ?? model.projects.first?.id
+        }
+    }
+
+    @ViewBuilder
+    private func compareColumn(
+        title: String,
+        projectID: UUID?,
+        mode: Binding<DraftComparisonMode>,
+        width: CGFloat,
+        onChooseProject: @escaping (UUID) -> Void
+    ) -> some View {
+        let selectedProject = projectID.flatMap { id in
+            model.projects.first(where: { $0.id == id })
+        }
+
+        let selectedText = comparisonText(for: selectedProject, mode: mode.wrappedValue)
+
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(selectedProject?.title ?? "Choose a project")
+                        .font(.headline)
+                }
+
+                Spacer()
+
+                Menu {
+                    ForEach(model.projects) { project in
+                        Button(project.title) {
+                            onChooseProject(project.id)
+                        }
+                    }
+                } label: {
+                    Label("", systemImage: "document.viewfinder")
+                    .help("Select a project to display")
+                }
+            }
+
+            HStack(spacing: 8) {
+                ForEach(DraftComparisonMode.allCases) { item in
+                    if mode.wrappedValue == item {
+                        Button {
+                            mode.wrappedValue = item
+                        } label: {
+                            Text(item.title)
+                                .font(.caption)
+                        }
+                        .buttonStyle(BorderedProminentButtonStyle())
+                    } else {
+                        Button {
+                            mode.wrappedValue = item
+                        } label: {
+                            Text(item.title)
+                                .font(.caption)
+                        }
+                        .buttonStyle(BorderedButtonStyle())
+                    }
+                }
+            }
+
+            ScrollView {
+                Text(selectedText)
+                    .font(.system(size: 22))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(.thinMaterial)
+                    )
+            }
+            .frame(width: width)
+            .frame(minHeight: 500)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(.quaternary, lineWidth: 1)
+            )
+        }
+        .frame(width: width, alignment: .topLeading)
+        .padding(5)
+    }
+
+    private func comparisonText(for project: AppModel.Project?, mode: DraftComparisonMode) -> String {
+        guard let project else { return "Choose a project to compare." }
+
+        let text: String
+        switch mode {
+        case .sectioned:
+            text = project.sections
+                .map { section in section.text }
+                .joined(separator: "\n────────────────────────────────\n")
+        case .unsectioned:
+            text = project.sections
+                .map { section in section.text }
+                .joined(separator: "")
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "(Empty project)" : trimmed
+    }
 }
 
 struct GraveyardWindowScene: View {

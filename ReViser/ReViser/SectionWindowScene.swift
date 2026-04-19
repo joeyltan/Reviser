@@ -6,8 +6,12 @@ struct SectionWindowScene: View {
     let sectionID: UUID
 
     @State private var calculatedHeight: CGFloat = 200
+    @State private var showNoteOptions: Bool = false
     @State private var showAddNoteBox: Bool = false
+    @State private var showResolvedNotes: Bool = false
     @State private var noteDraft: String = ""
+    @State private var editingNoteIndices: Set<Int> = []
+    @State private var revealedNoteActionIndex: Int? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -26,6 +30,8 @@ struct SectionWindowScene: View {
                     .frame(maxWidth: .infinity)
 
                     if model.noteMode, let notes = notesForSection() {
+                        let resolvedNotes = resolvedNotesForSection() ?? []
+
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Notes")
                                 .font(.headline)
@@ -38,10 +44,101 @@ struct SectionWindowScene: View {
                             } else {
                                 ScrollView {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
-                                            Text("• \(note)")
-                                                .font(.subheadline)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        ForEach(Array(notes.indices), id: \.self) { noteIndex in
+                                            HStack(alignment: .top, spacing: 8) {
+                                                Text("•")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+
+                                                if editingNoteIndices.contains(noteIndex), let binding = noteBinding(noteIndex: noteIndex) {
+                                                    TextField("Edit note", text: binding)
+                                                        .textFieldStyle(.roundedBorder)
+                                                        .font(.subheadline)
+                                                } else {
+                                                    Text(notes[noteIndex])
+                                                        .font(.subheadline)
+                                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                                }
+
+                                                HStack(spacing: 6) {
+                                                    if revealedNoteActionIndex == noteIndex {
+                                                        Button {
+                                                            if editingNoteIndices.contains(noteIndex) {
+                                                                editingNoteIndices.remove(noteIndex)
+                                                            } else {
+                                                                editingNoteIndices.insert(noteIndex)
+                                                            }
+                                                        } label: {
+                                                            Group {
+                                                                if editingNoteIndices.contains(noteIndex) {
+                                                                    Text("Save")
+                                                                        .font(.caption)
+                                                                        .foregroundStyle(.secondary)
+                                                                } else {
+                                                                    Image(systemName: "pencil")
+                                                                        .font(.system(size: 16))
+                                                                        .foregroundStyle(.secondary)
+                                                                }
+                                                            }
+                                                            .frame(width: 44, height: 28)
+                                                            .background(
+                                                                RoundedRectangle(cornerRadius: 14)
+                                                                    .fill(Color.secondary.opacity(0.08))
+                                                            )
+                                                        }
+                                                        .buttonStyle(.plain)
+                                                        .help(editingNoteIndices.contains(noteIndex) ? "Finish editing note" : "Edit note")
+
+                                                        Button {
+                                                            resolveNote(noteIndex: noteIndex)
+                                                            revealedNoteActionIndex = nil
+                                                        } label: {
+                                                            ZStack {
+                                                                Circle()
+                                                                    .fill(Color.secondary.opacity(0.08))
+                                                                    .frame(width: 28, height: 28)
+
+                                                                Image(systemName: "checkmark")
+                                                                    .font(.system(size: 16))
+                                                                    .foregroundStyle(.secondary)
+                                                            }
+                                                        }
+                                                        .buttonStyle(.plain)
+                                                        .help("Mark note as resolved")
+                                                    }
+
+                                                    Spacer(minLength: 0)
+
+                                                    Button {
+                                                        if revealedNoteActionIndex == noteIndex {
+                                                            revealedNoteActionIndex = nil
+                                                        } else {
+                                                            revealedNoteActionIndex = noteIndex
+                                                        }
+                                                    } label: {
+                                                        ZStack {
+                                                            Circle()
+                                                                .fill(Color.secondary.opacity(0.18))
+                                                                .frame(width: 28, height: 28)
+                                                            // have no image for this
+                                                            // Image(systemName: revealedNoteActionIndex == noteIndex ? "chevron.up" : "chevron.down")
+                                                            //     .font(.system(size: 12, weight: .semibold))
+                                                            //     .foregroundStyle(.secondary)
+                                                        }
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .help(revealedNoteActionIndex == noteIndex ? "Hide note actions" : "Show note actions")
+                                                }
+                                                .frame(width: 120, alignment: .trailing)
+                                            }
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                if revealedNoteActionIndex == noteIndex {
+                                                    revealedNoteActionIndex = nil
+                                                } else {
+                                                    revealedNoteActionIndex = noteIndex
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -49,10 +146,16 @@ struct SectionWindowScene: View {
                             }
 
                             Button {
-                                showAddNoteBox.toggle()
+                                if showNoteOptions {
+                                    showNoteOptions = false
+                                    showAddNoteBox = false
+                                    showResolvedNotes = false
+                                } else {
+                                    showNoteOptions = true
+                                }
                             } label: {
-                                Image(systemName: showAddNoteBox ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: 18))
+                                Image(systemName: showNoteOptions ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 14))
                                     .foregroundStyle(.secondary)
                                     .padding(6)
                                     .background(
@@ -61,8 +164,59 @@ struct SectionWindowScene: View {
                                     )
                             }
                             .buttonStyle(.plain)
-                            .help(showAddNoteBox ? "Hide add note box" : "Show add note box")
+                            .help(showNoteOptions ? "Hide note options" : "Show note options")
                             .frame(maxWidth: .infinity, alignment: .center)
+
+                            if showNoteOptions {
+                                HStack(spacing: 12) {
+                                    Button {
+                                        if showAddNoteBox {
+                                            showAddNoteBox = false
+                                        } else {
+                                            showAddNoteBox = true
+                                            showResolvedNotes = false
+                                        }
+                                    } label: {
+                                        Label("Add Note", systemImage: "plus.bubble")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        if showResolvedNotes {
+                                            showResolvedNotes = false
+                                        } else {
+                                            showResolvedNotes = true
+                                            showAddNoteBox = false
+                                        }
+                                    } label: {
+                                        Label("Resolved Notes", systemImage: "checkmark")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            }
+
+                            if showResolvedNotes {
+                                if resolvedNotes.isEmpty {
+                                    Text("No resolved notes")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            ForEach(Array(resolvedNotes.enumerated()), id: \.offset) { _, note in
+                                                Text("• \(note)")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
+                                        }
+                                    }
+                                    .frame(maxHeight: 120)
+                                }
+                            }
 
                             if showAddNoteBox {
                                 HStack(spacing: 8) {
@@ -94,8 +248,12 @@ struct SectionWindowScene: View {
         .navigationTitle("Section")
         .onChange(of: model.noteMode) { _, isOn in
             if !isOn {
+                showNoteOptions = false
                 showAddNoteBox = false
+                showResolvedNotes = false
                 noteDraft = ""
+                editingNoteIndices.removeAll()
+                revealedNoteActionIndex = nil
             }
         }
     }
@@ -126,6 +284,15 @@ struct SectionWindowScene: View {
         return model.projects[projectIndex].sections[sectionIndex].notes
     }
 
+    private func resolvedNotesForSection() -> [String]? {
+        guard let projectIndex = model.projects.firstIndex(where: { $0.sections.contains(where: { $0.id == sectionID }) }),
+              let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }) else {
+            return nil
+        }
+
+        return model.projects[projectIndex].sections[sectionIndex].resolvedNotes
+    }
+
     private func addNote() {
         guard let projectIndex = model.projects.firstIndex(where: { $0.sections.contains(where: { $0.id == sectionID }) }),
               let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }) else {
@@ -140,6 +307,52 @@ struct SectionWindowScene: View {
         let projectID = model.projects[projectIndex].id
         model.updateProjectSections(id: projectID, sections: sections)
         noteDraft = ""
+        editingNoteIndices.removeAll()
+        revealedNoteActionIndex = nil
+    }
+
+    private func resolveNote(noteIndex: Int) {
+        guard let projectIndex = model.projects.firstIndex(where: { $0.sections.contains(where: { $0.id == sectionID }) }),
+              let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }) else {
+            return
+        }
+
+        var sections = model.projects[projectIndex].sections
+        guard sections[sectionIndex].notes.indices.contains(noteIndex) else { return }
+
+        let note = sections[sectionIndex].notes.remove(at: noteIndex)
+        sections[sectionIndex].resolvedNotes.append(note)
+
+        let projectID = model.projects[projectIndex].id
+        model.updateProjectSections(id: projectID, sections: sections)
+        editingNoteIndices.removeAll()
+    }
+
+    private func noteBinding(noteIndex: Int) -> Binding<String>? {
+        guard let projectIndex = model.projects.firstIndex(where: { $0.sections.contains(where: { $0.id == sectionID }) }) else {
+            return nil
+        }
+
+        return Binding<String>(
+            get: {
+                guard let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }),
+                      model.projects[projectIndex].sections[sectionIndex].notes.indices.contains(noteIndex) else {
+                    return ""
+                }
+                return model.projects[projectIndex].sections[sectionIndex].notes[noteIndex]
+            },
+            set: { newValue in
+                guard let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }),
+                      model.projects[projectIndex].sections[sectionIndex].notes.indices.contains(noteIndex) else {
+                    return
+                }
+
+                var sections = model.projects[projectIndex].sections
+                sections[sectionIndex].notes[noteIndex] = newValue
+                let projectID = model.projects[projectIndex].id
+                model.updateProjectSections(id: projectID, sections: sections)
+            }
+        )
     }
 }
 
