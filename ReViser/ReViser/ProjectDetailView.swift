@@ -154,6 +154,40 @@ struct ProjectDetailView: View {
                         .foregroundColor(model.noteMode ? .blue : .gray)
                 }
                 .help(model.noteMode ? "Exit notes mode" : "Notes mode")
+
+                Menu {
+                    Button {
+                        applyStyle(.bold)
+                    } label: {
+                        Label("Bold", systemImage: "bold")
+                    }
+
+                    Button {
+                        applyStyle(.italic)
+                    } label: {
+                        Label("Italic", systemImage: "italic")
+                    }
+
+                    Button {
+                        applyStyle(.underline)
+                    } label: {
+                        Label("Underline", systemImage: "underline")
+                    }
+
+                    Button {
+                        applyStyle(.strikethrough)
+                    } label: {
+                        Label("Strikethrough", systemImage: "strikethrough")
+                    }
+                } label: {
+                    Image(systemName: "wand.and.sparkles")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(.gray)
+                }
+                .help("Text styling options")
+
                 Spacer()
             }
             .frame(width: 60)
@@ -812,7 +846,55 @@ struct ProjectDetailView: View {
             revealedResolveNoteKey = nil
         }
     }
+
+    enum TextStyle {
+        case bold
+        case italic
+        case underline
+        case strikethrough
+
+        var markers: (prefix: String, suffix: String) {
+            switch self {
+            case .bold:
+                return ("**", "**")
+            case .italic:
+                return ("*", "*")
+            case .underline:
+                return ("__", "__")
+            case .strikethrough:
+                return ("~~", "~~")
+            }
+        }
+    }
+
+    func applyStyle(_ style: TextStyle) {
+        guard let activeSectionID = activeSectionID,
+              let textView = textViews[activeSectionID],
+              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+
+        let selectedRange = textView.selectedRange
+        let text = sections[index].text
+        let selectedText = (text as NSString).substring(with: selectedRange)
+
+        if selectedText.isEmpty {
+            return
+        }
+
+        let markers = style.markers
+        let styledText = markers.prefix + selectedText + markers.suffix
+
+        // Replace selected text with styled version
+        sections[index].text = (text as NSString).replacingCharacters(in: selectedRange, with: styledText)
+
+        // Update the text view
+        textView.text = sections[index].text
+
+        // Move caret to after the styled text
+        let newPosition = selectedRange.location + styledText.count
+        textView.selectedRange = NSRange(location: newPosition, length: 0)
+    }
 }
+
 
 struct SectionWindowsView: View {
     @Binding var sections: [Section]
