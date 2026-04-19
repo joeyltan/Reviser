@@ -43,6 +43,8 @@ class AppModel {
     var immersiveSpaceState = ImmersiveSpaceState.closed
     var isSectionsWindowOpen: Bool = false
     var noteMode: Bool = false
+    var showSectionNumbersInWindows: Bool = false
+    var elevateSectionWindowsForBulkOpen: Bool = false
     var sectionGraveyard: [DeletedSection] = []
 
     // MARK: - Projects

@@ -12,6 +12,24 @@ struct SectionWindowScene: View {
     @State private var noteDraft: String = ""
     @State private var editingNoteIndices: Set<Int> = []
     @State private var revealedNoteActionIndex: Int? = nil
+    @State private var showSectionNumberInTitle: Bool = false
+
+    private var sectionTitle: String {
+        guard showSectionNumberInTitle, let sectionNumber = sectionNumber else {
+            return "Section"
+        }
+
+        return "Section \(sectionNumber)"
+    }
+
+    private var sectionNumber: Int? {
+        guard let projectIndex = model.projects.firstIndex(where: { $0.sections.contains(where: { $0.id == sectionID }) }),
+              let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }) else {
+            return nil
+        }
+
+        return sectionIndex + 1
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -254,7 +272,10 @@ struct SectionWindowScene: View {
             .padding(50)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .navigationTitle("Section")
+        .navigationTitle(sectionTitle)
+        .onAppear {
+            showSectionNumberInTitle = model.showSectionNumbersInWindows
+        }
         .onChange(of: model.noteMode) { _, isOn in
             if !isOn {
                 showNoteOptions = false

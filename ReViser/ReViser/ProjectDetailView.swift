@@ -32,6 +32,8 @@ struct ProjectDetailView: View {
     @State private var revealedResolveNoteKey: String? = nil
     @State private var noteDraftBySection: [UUID: String] = [:]
     @State private var editingNoteKeys: Set<String> = []
+    @State private var openingAllSectionWindows: Bool = false
+    @State private var allSectionWindowsVisible: Bool = false
 
     let projectID: UUID
 
@@ -112,6 +114,18 @@ struct ProjectDetailView: View {
                         .foregroundColor(windowMode ? .blue : .gray)
                 }
                 .help("Window section mode")
+
+                Button {
+                    openAllSectionsInWindows()
+                } label: {
+                    Image(systemName: "rectangle.grid.2x2")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor((openingAllSectionWindows || allSectionWindowsVisible) ? .blue : .gray)
+                }
+                .disabled(openingAllSectionWindows || sections.isEmpty)
+                .help(allSectionWindowsVisible ? "Close all section windows" : "Open all sections in ordered windows")
 
                 Button {
                     showingRestitchedManuscript.toggle()
@@ -726,6 +740,48 @@ struct ProjectDetailView: View {
         let note = sections[idx].notes.remove(at: noteIndex)
         sections[idx].resolvedNotes.append(note)
         revealedResolveNoteKey = nil
+    }
+
+    func openAllSectionsInWindows() {
+        guard !sections.isEmpty, !openingAllSectionWindows else { return }
+
+        openingAllSectionWindows = true
+
+        Task { @MainActor in
+            if allSectionWindowsVisible {
+                dismissWindow(id: "section-window")
+                model.showSectionNumbersInWindows = false
+                model.elevateSectionWindowsForBulkOpen = false
+                allSectionWindowsVisible = false
+                openingAllSectionWindows = false
+                return
+            }
+
+            model.showSectionNumbersInWindows = true
+            model.elevateSectionWindowsForBulkOpen = true
+            dismissWindow(id: "section-window")
+            try? await Task.sleep(nanoseconds: 500_000_000)
+
+            let columns = 3
+            let sectionIDs = sections.map(\.id)
+
+            for (index, sectionID) in sectionIDs.enumerated() {
+                openWindow(id: "section-window", value: sectionID)
+
+                let isEndOfRow = ((index + 1) % columns == 0)
+                if isEndOfRow {
+                    try? await Task.sleep(nanoseconds: 420_000_000)
+                } else {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                }
+            }
+
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            model.showSectionNumbersInWindows = false
+            model.elevateSectionWindowsForBulkOpen = false
+            allSectionWindowsVisible = true
+            openingAllSectionWindows = false
+        }
     }
 
     func clearAllNotes(in sectionID: UUID) {

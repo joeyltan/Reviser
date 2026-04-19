@@ -30,12 +30,45 @@ struct ReViserApp: App {
         }
         .windowStyle(.automatic)
         .windowResizability(.automatic)
+        .defaultWindowPlacement { _, context in
+            let sectionWindows = context.windows.filter { $0.id == "section-window" }
+            let existingSectionWindows = sectionWindows.count
+            let columns = 3
+            let row = existingSectionWindows / columns
+
+            guard let previousSectionWindow = sectionWindows.last else {
+                if appModel.elevateSectionWindowsForBulkOpen,
+                   let mainWindow = context.windows.first(where: { $0.id == "main-window" }) {
+                    return WindowPlacement(.above(mainWindow), size3D: nil)
+                }
+                return WindowPlacement(size3D: nil)
+            }
+
+            if existingSectionWindows == 0 {
+                if appModel.elevateSectionWindowsForBulkOpen,
+                   let mainWindow = context.windows.first(where: { $0.id == "main-window" }) {
+                    return WindowPlacement(.above(mainWindow), size3D: nil)
+                }
+                return WindowPlacement(size3D: nil)
+            }
+
+            // First row builds left-to-right.
+            if row == 0 {
+                return WindowPlacement(.trailing(previousSectionWindow), size3D: nil)
+            }
+
+            // Subsequent rows anchor to the same column above to reduce diagonal drift.
+            let anchorIndex = max(0, existingSectionWindows - columns)
+            let anchorWindow = sectionWindows[anchorIndex]
+            return WindowPlacement(.below(anchorWindow), size3D: nil)
+        }
         
         // this is for the matrix section layout window (with all sections)
         WindowGroup(id: "sections-window") {
             SectionsWindowScene()
                 .environment(appModel)
         }
+        .defaultSize(CGSize(width: 1400, height: 900))
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 
