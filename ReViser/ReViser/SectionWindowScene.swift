@@ -41,7 +41,7 @@ struct SectionWindowScene: View {
                         snappedY: .constant(0),
                         onSplit: { _ in },
                         onAttach: { _ in },
-                        onSelectionChange: { _ in },
+                        onSelectionChange: { _,_  in },
                         calculatedHeight: $calculatedHeight
                     )
                     .frame(height: min(calculatedHeight, max(240, proxy.size.height - (model.noteMode ? 200 : 40))))

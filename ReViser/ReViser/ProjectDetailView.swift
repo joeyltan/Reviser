@@ -7,6 +7,12 @@ import ZIPFoundation
 // let restitchedPDFType = UTType(exportedAs: "com.reviser.restitched-pdf", conformingTo: .pdf)
 
 struct ProjectDetailView: View {
+    struct ProjectEditSnapshot: Equatable {
+        var sections: [Section]
+        var sectionTags: [UUID: Set<String>]
+        var taggedTextBySection: [UUID: [String: Set<String>]]
+    }
+
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -24,6 +30,7 @@ struct ProjectDetailView: View {
 
     @State private var activeSectionID: UUID?
     @State private var caretIndexBySection: [UUID: Int] = [:]
+    @State private var selectedLengthBySection: [UUID: Int] = [:]
     @State private var sectionHeights: [UUID: CGFloat] = [:]
     @State private var visibleActionSectionIDs: Set<UUID> = []
     @State private var visibleNoteSectionIDs: Set<UUID> = []
@@ -43,8 +50,8 @@ struct ProjectDetailView: View {
     @State private var tagActionSectionID: UUID?
     @State private var tagActionSectionTags: [String] = []
     @State private var tagActionTextTags: [String] = []
-    @State private var projectUndoStack: [[Section]] = []
-    @State private var projectRedoStack: [[Section]] = []
+    @State private var projectUndoStack: [ProjectEditSnapshot] = []
+    @State private var projectRedoStack: [ProjectEditSnapshot] = []
     @State private var hasInitializedSectionHistory: Bool = false
     @State private var isApplyingUndo: Bool = false
     @State private var isApplyingRedo: Bool = false
@@ -132,11 +139,12 @@ struct ProjectDetailView: View {
                 if !hasInitializedSectionHistory {
                     hasInitializedSectionHistory = true
                 } else if !isApplyingUndo && !isApplyingRedo && !isSyncingSectionsFromModel && oldSections != newSections {
-                    projectUndoStack.append(oldSections)
-                    projectRedoStack.removeAll()
-                    if projectUndoStack.count > 200 {
-                        projectUndoStack.removeFirst(projectUndoStack.count - 200)
-                    }
+                    let oldSnapshot = ProjectEditSnapshot(
+                        sections: oldSections,
+                        sectionTags: sectionTags,
+                        taggedTextBySection: taggedTextBySection
+                    )
+                    pushUndoSnapshot(oldSnapshot)
                 }
 
                 if isApplyingUndo {
@@ -371,9 +379,17 @@ struct ProjectDetailView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 28, height: 28)
-                        .foregroundColor(activeFilterTags.isEmpty ? .gray : .blue)
+                        .foregroundColor(
+                            hasSelectedTextInActiveSection()
+                                ? .orange
+                                : (activeFilterTags.isEmpty ? .gray : .blue)
+                        )
+                        .shadow(
+                            color: hasSelectedTextInActiveSection() ? .orange.opacity(0.45) : .clear,
+                            radius: hasSelectedTextInActiveSection() ? 4 : 0
+                        )
                 }
-                .help("Tag and filter sections")
+                .help("Tag and filter sections/text")
                 .alert("New Tag Category", isPresented: $showingNewTagAlert) {
                     TextField("Tag name", text: $newTagName)
                     Button("Cancel", role: .cancel) {
@@ -551,9 +567,10 @@ struct ProjectDetailView: View {
                     onAttach: { view in
                         textViews[section.id] = view
                     },
-                    onSelectionChange: { caret in
+                    onSelectionChange: { caret, selectionLength in
                         activeSectionID = section.id
                         caretIndexBySection[section.id] = caret
+                        selectedLengthBySection[section.id] = selectionLength
                     },
                     calculatedHeight: Binding(
                         get: { sectionHeights[section.id] ?? 100 },
@@ -989,15 +1006,12 @@ struct ProjectDetailView: View {
     }
 
     func undoLastProjectChange() {
-        guard let previousSections = projectUndoStack.popLast() else { return }
+        guard let previousSnapshot = projectUndoStack.popLast() else { return }
 
-        projectRedoStack.append(sections)
-        if projectRedoStack.count > 200 {
-            projectRedoStack.removeFirst(projectRedoStack.count - 200)
-        }
+        pushRedoSnapshot(currentSnapshot())
 
         isApplyingUndo = true
-        sections = previousSections
+        applySnapshot(previousSnapshot)
 
         let validIDs = Set(sections.map(\.id))
         if let activeSectionID, !validIDs.contains(activeSectionID) {
@@ -1022,19 +1036,21 @@ struct ProjectDetailView: View {
         if let key = revealedResolveNoteKey,
            !validIDs.contains(where: { key.hasPrefix("\($0.uuidString)-") }) {
             revealedResolveNoteKey = nil
+        }
+
+        DispatchQueue.main.async {
+            self.isApplyingUndo = false
+            self.isApplyingRedo = false
         }
     }
 
     func redoLastProjectChange() {
-        guard let nextSections = projectRedoStack.popLast() else { return }
+        guard let nextSnapshot = projectRedoStack.popLast() else { return }
 
-        projectUndoStack.append(sections)
-        if projectUndoStack.count > 200 {
-            projectUndoStack.removeFirst(projectUndoStack.count - 200)
-        }
+        pushUndoSnapshot(currentSnapshot())
 
         isApplyingRedo = true
-        sections = nextSections
+        applySnapshot(nextSnapshot)
 
         let validIDs = Set(sections.map(\.id))
         if let activeSectionID, !validIDs.contains(activeSectionID) {
@@ -1059,6 +1075,11 @@ struct ProjectDetailView: View {
         if let key = revealedResolveNoteKey,
            !validIDs.contains(where: { key.hasPrefix("\($0.uuidString)-") }) {
             revealedResolveNoteKey = nil
+        }
+
+        DispatchQueue.main.async {
+            self.isApplyingUndo = false
+            self.isApplyingRedo = false
         }
     }
 
@@ -1223,15 +1244,10 @@ struct ProjectDetailView: View {
         guard let activeSectionID = activeSectionID else { return }
 
         if let selectedText = currentlySelectedText(in: activeSectionID), !selectedText.isEmpty {
-            if taggedTextBySection[activeSectionID] == nil {
-                taggedTextBySection[activeSectionID] = [:]
-            }
+            let currentTags = taggedTextBySection[activeSectionID]?[selectedText] ?? []
 
-            if taggedTextBySection[activeSectionID]?[selectedText] == nil {
-                taggedTextBySection[activeSectionID]?[selectedText] = []
-            }
-
-            if taggedTextBySection[activeSectionID]?[selectedText]?.contains(tag) == true {
+            if currentTags.contains(tag) {
+                captureUndoBeforeTagChange()
                 taggedTextBySection[activeSectionID]?[selectedText]?.remove(tag)
 
                 if taggedTextBySection[activeSectionID]?[selectedText]?.isEmpty == true {
@@ -1242,12 +1258,21 @@ struct ProjectDetailView: View {
                     taggedTextBySection[activeSectionID] = nil
                 }
             } else {
+                captureUndoBeforeTagChange()
+                if taggedTextBySection[activeSectionID] == nil {
+                    taggedTextBySection[activeSectionID] = [:]
+                }
+                if taggedTextBySection[activeSectionID]?[selectedText] == nil {
+                    taggedTextBySection[activeSectionID]?[selectedText] = []
+                }
                 taggedTextBySection[activeSectionID]?[selectedText]?.insert(tag)
             }
         } else {
             if sectionTags[activeSectionID]?.contains(tag) == true {
+                captureUndoBeforeTagChange()
                 sectionTags[activeSectionID]?.remove(tag)
             } else {
+                captureUndoBeforeTagChange()
                 if sectionTags[activeSectionID] == nil {
                     sectionTags[activeSectionID] = []
                 }
@@ -1293,6 +1318,45 @@ struct ProjectDetailView: View {
         return allTags(for: activeSectionID).contains(tag)
     }
 
+    func hasSelectedTextInActiveSection() -> Bool {
+        guard let activeSectionID else { return false }
+        return (selectedLengthBySection[activeSectionID] ?? 0) > 0
+    }
+
+    func currentSnapshot() -> ProjectEditSnapshot {
+        ProjectEditSnapshot(
+            sections: sections,
+            sectionTags: sectionTags,
+            taggedTextBySection: taggedTextBySection
+        )
+    }
+
+    func applySnapshot(_ snapshot: ProjectEditSnapshot) {
+        sections = snapshot.sections
+        sectionTags = snapshot.sectionTags
+        taggedTextBySection = snapshot.taggedTextBySection
+    }
+
+    func pushUndoSnapshot(_ snapshot: ProjectEditSnapshot) {
+        projectUndoStack.append(snapshot)
+        projectRedoStack.removeAll()
+        if projectUndoStack.count > 200 {
+            projectUndoStack.removeFirst(projectUndoStack.count - 200)
+        }
+    }
+
+    func pushRedoSnapshot(_ snapshot: ProjectEditSnapshot) {
+        projectRedoStack.append(snapshot)
+        if projectRedoStack.count > 200 {
+            projectRedoStack.removeFirst(projectRedoStack.count - 200)
+        }
+    }
+
+    func captureUndoBeforeTagChange() {
+        guard !isApplyingUndo && !isApplyingRedo else { return }
+        pushUndoSnapshot(currentSnapshot())
+    }
+
     func presentTagActions(for sectionID: UUID) {
         let sectionTags = sectionLevelTags(for: sectionID).sorted()
         let textTags = textLevelTags(for: sectionID).sorted()
@@ -1306,6 +1370,7 @@ struct ProjectDetailView: View {
     func removeSectionTag(_ tag: String, from sectionID: UUID) {
         guard sectionTags[sectionID]?.contains(tag) == true else { return }
 
+        captureUndoBeforeTagChange()
         sectionTags[sectionID]?.remove(tag)
         if sectionTags[sectionID]?.isEmpty == true {
             sectionTags[sectionID] = nil
@@ -1314,6 +1379,11 @@ struct ProjectDetailView: View {
 
     func removeTextTag(_ tag: String, from sectionID: UUID) {
         guard var snippets = taggedTextBySection[sectionID] else { return }
+
+        let hadTag = snippets.values.contains { $0.contains(tag) }
+        guard hadTag else { return }
+
+        captureUndoBeforeTagChange()
 
         for key in snippets.keys {
             snippets[key]?.remove(tag)
@@ -1406,7 +1476,7 @@ struct TextKitView: UIViewRepresentable {
     @Binding var snappedY: CGFloat
     var onSplit: (CGFloat) -> Void
     var onAttach: (UITextView) -> Void
-    var onSelectionChange: (Int) -> Void
+    var onSelectionChange: (Int, Int) -> Void
     @Binding var calculatedHeight: CGFloat
 
     func makeUIView(context: Context) -> UITextView {
@@ -1429,7 +1499,7 @@ struct TextKitView: UIViewRepresentable {
         context.coordinator.textView = view
         DispatchQueue.main.async {
             self.onAttach(view)
-            self.onSelectionChange(view.selectedRange.location)
+            self.onSelectionChange(view.selectedRange.location, view.selectedRange.length)
         }
         
         return view
@@ -1505,7 +1575,7 @@ struct TextKitView: UIViewRepresentable {
         }
         
         func textViewDidChangeSelection(_ textView: UITextView) {
-            parent.onSelectionChange(textView.selectedRange.location)
+            parent.onSelectionChange(textView.selectedRange.location, textView.selectedRange.length)
         }
     }
 }
