@@ -259,7 +259,7 @@ struct SectionsOverviewCard: View {
                     Spacer()
 
                     HStack(spacing: 6) {
-                        Image(systemName: "ellipsis")
+                        Image(systemName: "circle.grid.3x3.fill")
                             .font(.system(size: 24, weight: .semibold))
                     }
                     .padding(.horizontal, 8)

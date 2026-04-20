@@ -4,8 +4,6 @@ import UIKit
 import UniformTypeIdentifiers
 import ZIPFoundation
 
-// let restitchedPDFType = UTType(exportedAs: "com.reviser.restitched-pdf", conformingTo: .pdf)
-
 struct ProjectDetailView: View {
     struct ProjectEditSnapshot: Equatable {
         var sections: [Section]
@@ -23,9 +21,7 @@ struct ProjectDetailView: View {
     @State private var splitMode: Bool = false
     @State private var windowMode: Bool = false
     @State private var showingRestitchedManuscript: Bool = false
-    // @State private var showingRestitchedPDFExport: Bool = false
     @State private var showingRestitchedDocxExport: Bool = false
-    // @State private var restitchedPDFDocument = RestitchedManuscriptPDFDocument(text: "")
     @State private var restitchedDocxDocument = RestitchedManuscriptDocxDocument(text: "")
 
     @State private var activeSectionID: UUID?
@@ -45,6 +41,11 @@ struct ProjectDetailView: View {
     @State private var taggedTextBySection: [UUID: [String: Set<String>]] = [:]
     @State private var customTagCategories: Set<String> = []
     @State private var activeFilterTags: Set<String> = []
+    @State private var showFilteredTimeline: Bool = false
+    @State private var linkedTimelineFrames: [UUID: CGRect] = [:]
+    @State private var linkedTimelineTextViewFrames: [UUID: CGRect] = [:]
+    @State private var linkedTimelineSnippetPoints: [UUID: [String: [CGPoint]]] = [:]
+    @State private var showingNoFilterMatchAlert: Bool = false
     @State private var showingNewTagAlert: Bool = false
     @State private var newTagName: String = ""
     @State private var tagActionSectionID: UUID?
@@ -88,7 +89,7 @@ struct ProjectDetailView: View {
                     if !tagActionSectionTags.isEmpty {
                         SwiftUI.Section("Remove section tag") {
                             ForEach(tagActionSectionTags, id: \.self) { tag in
-                                Button("Delete \(tag)", role: .destructive) {
+                                Button("Delete \(tag) (Section)", role: .destructive) {
                                     removeSectionTag(tag, from: sectionID)
                                 }
                             }
@@ -102,7 +103,7 @@ struct ProjectDetailView: View {
                     if !tagActionTextTags.isEmpty {
                         SwiftUI.Section("Remove text tag") {
                             ForEach(tagActionTextTags, id: \.self) { tag in
-                                Button("Delete \(tag)", role: .destructive) {
+                                Button("Delete \(tag) (Text)", role: .destructive) {
                                     removeTextTag(tag, from: sectionID)
                                 }
                             }
@@ -160,18 +161,35 @@ struct ProjectDetailView: View {
                 }
 
                 model.updateProjectSections(id: projectID, sections: newSections)
+                sanitizeActiveFilterTags()
             }
             .onChange(of: project.sections) { _, updatedSections in
                 guard updatedSections != sections else { return }
                 isSyncingSectionsFromModel = true
                 sections = updatedSections
             }
-            // .fileExporter(
-            //     isPresented: $showingRestitchedPDFExport,
-            //     document: restitchedPDFDocument,
-            //     contentType: restitchedPDFType,
-            //     defaultFilename: "\(project.title)-restitched.pdf"
-            // ) { _ in }
+            .onChange(of: sectionTags) { _, _ in
+                sanitizeActiveFilterTags()
+                enforceTimelineAvailability()
+            }
+            .onChange(of: taggedTextBySection) { _, _ in
+                sanitizeActiveFilterTags()
+                enforceTimelineAvailability()
+            }
+            .onChange(of: customTagCategories) { _, _ in
+                sanitizeActiveFilterTags()
+                enforceTimelineAvailability()
+            }
+            .onChange(of: activeFilterTags) { _, newFilters in
+                guard !newFilters.isEmpty else { return }
+                if !hasFilterMatch(for: newFilters) {
+                    showingNoFilterMatchAlert = true
+                }
+            }
+
+            .alert("No filter match", isPresented: $showingNoFilterMatchAlert) {
+                Button("OK", role: .cancel) {}
+            }
             .fileExporter(
                 isPresented: $showingRestitchedDocxExport,
                 document: restitchedDocxDocument,
@@ -319,9 +337,10 @@ struct ProjectDetailView: View {
                                 } label: {
                                     HStack {
                                         Text(tag)
-                                        
-                                        if isTagAppliedInActiveContext(tag) {
-                                            Image(systemName: "checkmark")
+
+                                        let tagState = tagApplicationStateInActiveContext(tag)
+                                        if tagState != .none {
+                                            tagStateMenuBadge(tagState)
                                         }
                                     }
                                 }
@@ -331,16 +350,34 @@ struct ProjectDetailView: View {
                     }
                     
                     // New tag button
+                    let availableFilterTags = filterableTags()
+                    let hasAnyTaggedContent = !usedTagsInProject().isEmpty
                     Button(action: {
                         showingNewTagAlert = true
                     }) {
                         Label("Add New Tag Category", systemImage: "plus")
                     }
+
+                    Divider()
+
+                    Button {
+                        showFilteredTimeline.toggle()
+                    } label: {
+                        HStack {
+                            Text("Show as linked timeline")
+                            Spacer()
+                            if showFilteredTimeline {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                    .disabled(!hasAnyTaggedContent)
                     
                     Divider()
                     
                     // Filter section
-                    if !customTagCategories.isEmpty {
+                    if !availableFilterTags.isEmpty {
                         Menu {
                             Button {
                                 activeFilterTags.removeAll()
@@ -353,7 +390,7 @@ struct ProjectDetailView: View {
 
                             Divider()
 
-                            ForEach(customTagCategories.sorted(), id: \.self) { tag in
+                            ForEach(availableFilterTags, id: \.self) { tag in
                                 Button {
                                     if activeFilterTags.contains(tag) {
                                         activeFilterTags.remove(tag)
@@ -427,18 +464,18 @@ struct ProjectDetailView: View {
     @ViewBuilder
     private func mainContentView(project: AppModel.Project) -> some View {
         ZStack(alignment: .topLeading) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    let filteredSections = sections.enumerated().filter { _, section in
-                        let tagsForSection = allTags(for: section.id)
-                        return activeFilterTags.isEmpty || activeFilterTags.isSubset(of: tagsForSection)
+            if shouldShowFilteredTimeline {
+                linkedTimelineView()
+                    .padding(40)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        ForEach(displayedSectionsForCurrentFilters(), id: \.id) { section in
+                            sectionView(section: section, index: originalSectionIndex(for: section.id))
+                        }
                     }
-
-                    ForEach(Array(filteredSections), id: \.element.id) { index, section in
-                        sectionView(section: section, index: index)
-                    }
+                    .padding(40)
                 }
-                .padding(40)
             }
             
             if splitMode {
@@ -450,6 +487,519 @@ struct ProjectDetailView: View {
                 .foregroundColor(.gray)
                 .allowsHitTesting(false)
             }
+        }
+    }
+
+    private var shouldShowFilteredTimeline: Bool {
+        showFilteredTimeline
+    }
+
+    private func displayedSectionsForCurrentFilters() -> [Section] {
+        let filteredSections = sections.filter { section in
+            let tagsForSection = allTags(for: section.id)
+            return activeFilterTags.isEmpty || activeFilterTags.isSubset(of: tagsForSection)
+        }
+
+        if !activeFilterTags.isEmpty && filteredSections.isEmpty {
+            return sections
+        }
+
+        return filteredSections.isEmpty ? sections : filteredSections
+    }
+
+    private struct LinkedTimelineFrame: Equatable {
+        let id: UUID
+        let frame: CGRect
+    }
+
+    private struct LinkedTimelineFramePreferenceKey: PreferenceKey {
+        static var defaultValue: [LinkedTimelineFrame] = []
+
+        static func reduce(value: inout [LinkedTimelineFrame], nextValue: () -> [LinkedTimelineFrame]) {
+            value.append(contentsOf: nextValue())
+        }
+    }
+
+    private struct LinkedTimelineTextViewFrame: Equatable {
+        let id: UUID
+        let frame: CGRect
+    }
+
+    private struct LinkedTimelineTextViewFramePreferenceKey: PreferenceKey {
+        static var defaultValue: [LinkedTimelineTextViewFrame] = []
+
+        static func reduce(value: inout [LinkedTimelineTextViewFrame], nextValue: () -> [LinkedTimelineTextViewFrame]) {
+            value.append(contentsOf: nextValue())
+        }
+    }
+
+    @ViewBuilder
+    private func linkedTimelineView() -> some View {
+        let displayedSections = displayedSectionsForCurrentFilters()
+        let textPointsByTag = linkedTimelineTextPointsByTag(displayedSections: displayedSections)
+        let timelineAvailableTags = filterableTags()
+
+        if displayedSections.isEmpty {
+            Text("(Empty project)")
+                .font(.system(size: 24))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+                .padding(24)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(.secondarySystemBackground))
+                )
+        } else {
+            GeometryReader { proxy in
+                let panelWidth: CGFloat = 260
+                let contentSpacing: CGFloat = 20
+                let canvasWidth = max(proxy.size.width - panelWidth - contentSpacing, 620)
+                let columns = timelineColumnCount(for: canvasWidth)
+                let gridItems = Array(
+                    repeating: GridItem(.flexible(minimum: 360, maximum: 520), spacing: 28),
+                    count: columns
+                )
+
+                ScrollView([.vertical, .horizontal]) {
+                    HStack(alignment: .top, spacing: contentSpacing) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Linked timeline")
+                                        .font(.headline)
+                                    Text("Shows section links plus tag-based text links. Use the panel to filter by tags.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Text("\(displayedSections.count) sections")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        Capsule().fill(Color.secondary.opacity(0.10))
+                                    )
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.top, 8)
+
+                            ZStack(alignment: .topLeading) {
+                                Canvas { context, _ in
+                                    func addSeparatedCurve(
+                                        _ path: inout Path,
+                                        from startPoint: CGPoint,
+                                        to endPoint: CGPoint,
+                                        offset: CGFloat
+                                    ) {
+                                        let sharedControlX = max(startPoint.x, endPoint.x) + offset
+
+                                        path.move(to: startPoint)
+                                        path.addCurve(
+                                            to: endPoint,
+                                            control1: CGPoint(x: sharedControlX, y: startPoint.y),
+                                            control2: CGPoint(x: sharedControlX, y: endPoint.y)
+                                        )
+                                    }
+
+                                    if displayedSections.count > 1 {
+                                        for (pairIndex, pair) in zip(displayedSections, displayedSections.dropFirst()).enumerated() {
+                                            guard let startFrame = linkedTimelineFrames[pair.0.id],
+                                                  let endFrame = linkedTimelineFrames[pair.1.id] else { continue }
+
+                                            let startPoint = CGPoint(x: startFrame.minX, y: startFrame.minY)
+                                            let endPoint = CGPoint(x: endFrame.minX, y: endFrame.minY)
+                                            let sectionOffset = 26 + CGFloat(pairIndex % 4) * 10
+
+                                            let startSectionTags = sectionLevelTags(for: pair.0.id)
+                                            let endSectionTags = sectionLevelTags(for: pair.1.id)
+                                            let sharedSectionTags = startSectionTags.intersection(endSectionTags)
+
+                                            let preferredTag =
+                                                activeFilterTags.sorted().first(where: { sharedSectionTags.contains($0) }) ??
+                                                sharedSectionTags.sorted().first ??
+                                                activeFilterTags.sorted().first(where: { startSectionTags.contains($0) || endSectionTags.contains($0) }) ??
+                                                startSectionTags.union(endSectionTags).sorted().first
+
+                                            let sectionLinkColor = preferredTag.map { colorForTag($0).opacity(0.65) } ?? Color.blue.opacity(0.35)
+
+                                            var sectionPath = Path()
+                                            addSeparatedCurve(&sectionPath, from: startPoint, to: endPoint, offset: sectionOffset)
+
+                                            context.stroke(
+                                                sectionPath,
+                                                with: .color(sectionLinkColor),
+                                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round, dash: [8, 6])
+                                            )
+                                        }
+                                    }
+
+                                    let orderedTags = textPointsByTag.keys.sorted()
+
+                                    for (tagIndex, tag) in orderedTags.enumerated() {
+                                        guard let points = textPointsByTag[tag], points.count > 1 else { continue }
+
+                                        let textOffset = 18 + CGFloat(tagIndex % 6) * 8
+                                        var textPath = Path()
+
+                                        for pair in zip(points, points.dropFirst()) {
+                                            let startPoint = pair.0
+                                            let endPoint = pair.1
+
+                                            addSeparatedCurve(&textPath, from: startPoint, to: endPoint, offset: textOffset)
+                                        }
+
+                                        context.stroke(
+                                            textPath,
+                                            with: .color(colorForTag(tag).opacity(0.80)),
+                                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                                        )
+                                    }
+                                }
+                                .allowsHitTesting(false)
+
+                                LazyVGrid(columns: gridItems, alignment: .leading, spacing: 28) {
+                                    ForEach(displayedSections, id: \.id) { section in
+                                        timelineCardView(section: section)
+                                            .background(
+                                                GeometryReader { proxy in
+                                                    Color.clear.preference(
+                                                        key: LinkedTimelineFramePreferenceKey.self,
+                                                        value: [LinkedTimelineFrame(id: section.id, frame: proxy.frame(in: .named("linkedTimelineCanvas")))]
+                                                    )
+                                                }
+                                            )
+                                    }
+                                }
+                            }
+                            .coordinateSpace(name: "linkedTimelineCanvas")
+                            .padding(24)
+                            .background(
+                                RoundedRectangle(cornerRadius: 28)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color(.secondarySystemBackground), Color(.secondarySystemBackground).opacity(0.96)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 28)
+                                    .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                            )
+                        }
+                        .frame(width: canvasWidth, alignment: .leading)
+                        .padding(.leading, 24)
+                        .padding(.bottom, 24)
+
+                        timelineTagFilterPanel(availableTags: timelineAvailableTags)
+                            .frame(width: panelWidth)
+                            .padding(.trailing, 24)
+                            .padding(.top, 12)
+                    }
+                }
+                .onPreferenceChange(LinkedTimelineFramePreferenceKey.self) { frames in
+                    linkedTimelineFrames = Dictionary(uniqueKeysWithValues: frames.map { ($0.id, $0.frame) })
+                }
+                .onPreferenceChange(LinkedTimelineTextViewFramePreferenceKey.self) { frames in
+                    linkedTimelineTextViewFrames = Dictionary(uniqueKeysWithValues: frames.map { ($0.id, $0.frame) })
+                }
+            }
+        }
+    }
+
+    private func linkedTimelineTextPointsByTag(displayedSections: [Section]) -> [String: [CGPoint]] {
+        var pointsByTag: [String: [(Int, CGPoint)]] = [:]
+
+        for (sectionIndex, section) in displayedSections.enumerated() {
+            guard let textFrame = linkedTimelineTextViewFrames[section.id],
+                  let snippetPoints = linkedTimelineSnippetPoints[section.id],
+                  let taggedSnippets = taggedTextBySection[section.id] else { continue }
+
+            for (snippet, tags) in taggedSnippets {
+                guard let points = snippetPoints[snippet], !points.isEmpty else { continue }
+
+                for point in points {
+                    let canvasPoint = CGPoint(x: textFrame.minX + point.x, y: textFrame.minY + point.y)
+                    for tag in tags {
+                        if !activeFilterTags.isEmpty && !activeFilterTags.contains(tag) {
+                            continue
+                        }
+                        pointsByTag[tag, default: []].append((sectionIndex, canvasPoint))
+                    }
+                }
+            }
+        }
+
+        return pointsByTag.mapValues { entries in
+            entries
+                .sorted { lhs, rhs in
+                    if lhs.0 == rhs.0 {
+                        return lhs.1.y < rhs.1.y
+                    }
+                    return lhs.0 < rhs.0
+                }
+                .map { $0.1 }
+        }
+    }
+
+    private func colorForTag(_ tag: String) -> Color {
+        let scalarSum = tag.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        let hue = Double(scalarSum % 360) / 360.0
+        return Color(hue: hue, saturation: 0.78, brightness: 0.95)
+    }
+
+    @ViewBuilder
+    private func timelineTagFilterPanel(availableTags: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Timeline filters")
+                .font(.headline)
+
+            Text("Select tags to focus the section set and tag links.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if availableTags.isEmpty {
+                Text("No tags available")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            } else {
+                Button("Clear tag filters") {
+                    activeFilterTags.removeAll()
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+                .disabled(activeFilterTags.isEmpty)
+
+                Divider()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(availableTags, id: \.self) { tag in
+                            Button {
+                                if activeFilterTags.contains(tag) {
+                                    activeFilterTags.remove(tag)
+                                } else {
+                                    activeFilterTags.insert(tag)
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(colorForTag(tag))
+                                        .frame(width: 10, height: 10)
+
+                                    Text(tag)
+                                        .font(.subheadline)
+                                        .lineLimit(1)
+
+                                    Spacer()
+
+                                    if activeFilterTags.contains(tag) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.white)
+                                    }
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(activeFilterTags.contains(tag) ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.08))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+        )
+    }
+
+    private func timelineColumnCount(for width: CGFloat) -> Int {
+        let availableWidth = max(width - 72, 360)
+        let preferredColumns = Int(availableWidth / 460)
+        return min(max(preferredColumns, 1), 3)
+    }
+
+    private func originalSectionIndex(for sectionID: UUID) -> Int {
+        sections.firstIndex(where: { $0.id == sectionID }) ?? 0
+    }
+
+    @ViewBuilder
+    private func timelineCardView(section: Section) -> some View {
+        let sectionNumber = originalSectionIndex(for: section.id) + 1
+        let sectionLevelTagSet = sectionLevelTags(for: section.id)
+        let textLevelTagSet = textLevelTags(for: section.id)
+        let tags = sectionLevelTagSet.union(textLevelTagSet).sorted()
+
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Section \(sectionNumber)")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    Text(activeFilterTags.isEmpty ? "All content" : "Filtered match")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Circle()
+                    .fill(activeFilterTags.isEmpty ? Color.secondary.opacity(0.45) : Color.orange.opacity(0.85))
+                    .frame(width: 12, height: 12)
+                    .padding(.top, 6)
+            }
+
+            if !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(tags, id: \.self) { tag in
+                            let isSectionTag = sectionLevelTagSet.contains(tag)
+                            let isTextTag = textLevelTagSet.contains(tag)
+                            let foregroundColor: Color = {
+                                if isSectionTag && isTextTag { return .orange }
+                                if isSectionTag { return .blue }
+                                if isTextTag { return .orange }
+                                return .secondary
+                            }()
+
+                            let backgroundColor: Color = {
+                                if isSectionTag && isTextTag { return Color.blue.opacity(0.20) }
+                                if isSectionTag { return Color.blue.opacity(0.14) }
+                                if isTextTag { return Color.orange.opacity(0.14) }
+                                return Color.secondary.opacity(0.10)
+                            }()
+
+                            Text(tag)
+                                .font(.caption2)
+                                .foregroundStyle(foregroundColor)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(backgroundColor)
+                                )
+                        }
+                    }
+                }
+            }
+
+            sectionTimelineView(section: section)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .overlay(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+        }
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 20)
+                .fill(activeFilterTags.isEmpty ? Color.secondary.opacity(0.35) : Color.orange.opacity(0.55))
+                .frame(width: 4)
+        }
+        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
+    }
+
+    @ViewBuilder
+    private func sectionTimelineView(section: Section) -> some View {
+        let sectionLevelTags = sectionLevelTags(for: section.id)
+        let textLevelTags = textLevelTags(for: section.id)
+        let textTaggedSnippets = Set(taggedTextBySection[section.id]?.keys.map { $0 } ?? [])
+        let hasSectionTags = !sectionLevelTags.isEmpty
+        let hasTextTags = !textLevelTags.isEmpty
+        let hasTags = hasSectionTags || hasTextTags
+        let tooltipText = [
+            hasSectionTags ? "Section tags: \(sectionLevelTags.sorted().joined(separator: ", "))" : nil,
+            hasTextTags ? "Text tags: \(textLevelTags.sorted().joined(separator: ", "))" : nil
+        ]
+            .compactMap { $0 }
+            .joined(separator: "\n")
+
+        TextKitView(
+            text: binding(for: section),
+            highlightedSnippets: textTaggedSnippets,
+            splitMode: splitMode,
+            snappedY: $snappedY,
+            onSplit: { y in
+                splitSection(id: section.id, y: y)
+            },
+            onAttach: { view in
+                textViews[section.id] = view
+            },
+            onSelectionChange: { caret, selectionLength in
+                activeSectionID = section.id
+                caretIndexBySection[section.id] = caret
+                selectedLengthBySection[section.id] = selectionLength
+            },
+            calculatedHeight: Binding(
+                get: { sectionHeights[section.id] ?? 100 },
+                set: { sectionHeights[section.id] = $0 }
+            ),
+            onHighlightedSnippetAnchorsChange: { snippetPoints in
+                linkedTimelineSnippetPoints[section.id] = snippetPoints
+            }
+        )
+        .multilineTextAlignment(.leading)
+        .frame(height: sectionHeights[section.id] ?? 100)
+        .frame(maxWidth: .infinity)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: LinkedTimelineTextViewFramePreferenceKey.self,
+                    value: [LinkedTimelineTextViewFrame(id: section.id, frame: proxy.frame(in: .named("linkedTimelineCanvas")))]
+                )
+            }
+        )
+        .overlay(alignment: .topLeading) {
+            if hasTags {
+                Button {
+                    presentTagActions(for: section.id)
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if hasSectionTags {
+                            Image(systemName: "tag.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.blue)
+                        }
+
+                        if hasTextTags {
+                            Image(systemName: "text.badge.checkmark")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.secondary.opacity(0.12))
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(tooltipText)
+                .offset(x: -36, y: 8)
+            }
+        }
+
+        if model.noteMode {
+            sectionNotesView(sectionID: section.id)
         }
     }
 
@@ -1318,9 +1868,91 @@ struct ProjectDetailView: View {
         return allTags(for: activeSectionID).contains(tag)
     }
 
+    enum TagApplicationState {
+        case none
+        case textOnly
+        case sectionOnly
+        case both
+    }
+
+    @ViewBuilder
+    func tagStateMenuBadge(_ state: TagApplicationState) -> some View {
+        switch state {
+        case .none:
+            EmptyView()
+        case .textOnly:
+            Image(systemName: "checkmark.circle.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.orange, .orange.opacity(0.20))
+        case .sectionOnly:
+            Image(systemName: "checkmark.circle.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.blue, .blue.opacity(0.20))
+        case .both:
+            Image(systemName: "checkmark.circle.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.orange, .blue, .blue.opacity(0.20))
+        }
+    }
+
+    func tagApplicationStateInActiveContext(_ tag: String) -> TagApplicationState {
+        guard let activeSectionID = activeSectionID else { return .none }
+
+        let hasSectionTag = sectionLevelTags(for: activeSectionID).contains(tag)
+        let hasTextTag: Bool
+
+        if let selectedText = currentlySelectedText(in: activeSectionID),
+           let tagsForSelection = taggedTextBySection[activeSectionID]?[selectedText] {
+            hasTextTag = tagsForSelection.contains(tag)
+        } else {
+            hasTextTag = textLevelTags(for: activeSectionID).contains(tag)
+        }
+
+        switch (hasSectionTag, hasTextTag) {
+        case (false, false): return .none
+        case (false, true): return .textOnly
+        case (true, false): return .sectionOnly
+        case (true, true): return .both
+        }
+    }
+
     func hasSelectedTextInActiveSection() -> Bool {
         guard let activeSectionID else { return false }
         return (selectedLengthBySection[activeSectionID] ?? 0) > 0
+    }
+
+    func usedTagsInProject() -> Set<String> {
+        var used: Set<String> = []
+        for section in sections {
+            used.formUnion(allTags(for: section.id))
+        }
+        return used
+    }
+
+    func hasFilterMatch(for filters: Set<String>) -> Bool {
+        sections.contains { section in
+            let tagsForSection = allTags(for: section.id)
+            return filters.isSubset(of: tagsForSection)
+        }
+    }
+
+    func filterableTags() -> [String] {
+        customTagCategories
+            .intersection(usedTagsInProject())
+            .sorted()
+    }
+
+    func sanitizeActiveFilterTags() {
+        let allowed = Set(filterableTags())
+        if activeFilterTags != activeFilterTags.intersection(allowed) {
+            activeFilterTags = activeFilterTags.intersection(allowed)
+        }
+    }
+
+    func enforceTimelineAvailability() {
+        if usedTagsInProject().isEmpty {
+            showFilteredTimeline = false
+        }
     }
 
     func currentSnapshot() -> ProjectEditSnapshot {
@@ -1478,6 +2110,7 @@ struct TextKitView: UIViewRepresentable {
     var onAttach: (UITextView) -> Void
     var onSelectionChange: (Int, Int) -> Void
     @Binding var calculatedHeight: CGFloat
+    var onHighlightedSnippetAnchorsChange: (([String: [CGPoint]]) -> Void)? = nil
 
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
@@ -1523,6 +2156,8 @@ struct TextKitView: UIViewRepresentable {
             if self.calculatedHeight != newHeight {
                 self.calculatedHeight = newHeight
             }
+
+            self.onHighlightedSnippetAnchorsChange?(self.computeSnippetAnchorPoints(in: uiView))
         }
     }
 
@@ -1559,6 +2194,39 @@ struct TextKitView: UIViewRepresentable {
         }
 
         return attributed
+    }
+
+    private func computeSnippetAnchorPoints(in textView: UITextView) -> [String: [CGPoint]] {
+        guard !highlightedSnippets.isEmpty else { return [:] }
+
+        var result: [String: [CGPoint]] = [:]
+        let text = textView.text ?? ""
+        let nsText = text as NSString
+        let layoutManager = textView.layoutManager
+
+        for snippet in highlightedSnippets where !snippet.isEmpty {
+            var searchRange = NSRange(location: 0, length: nsText.length)
+
+            while true {
+                let found = nsText.range(of: snippet, options: [], range: searchRange)
+                if found.location == NSNotFound { break }
+
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: found, actualCharacterRange: nil)
+                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer)
+
+                rect.origin.x += textView.textContainerInset.left
+                rect.origin.y += textView.textContainerInset.top - textView.contentOffset.y
+
+                let anchor = CGPoint(x: rect.minX, y: rect.minY)
+                result[snippet, default: []].append(anchor)
+
+                let nextStart = found.location + found.length
+                if nextStart >= nsText.length { break }
+                searchRange = NSRange(location: nextStart, length: nsText.length - nextStart)
+            }
+        }
+
+        return result
     }
 
     class Coordinator: NSObject, UITextViewDelegate {
