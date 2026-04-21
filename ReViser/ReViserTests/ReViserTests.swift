@@ -205,13 +205,17 @@ struct ReViserTests {
     }
 
     @Test
-    func supportedContentTypesIncludeCommonManuscriptFormats() {
-        let model = AppModel()
+    @MainActor
+    func supportedContentTypesIncludeCommonManuscriptFormats() async {
+        let supportedContentTypes = await MainActor.run {
+            let model = AppModel()
+            return model.supportedContentTypes
+        }
 
-        #expect(model.supportedContentTypes.contains(.plainText))
-        #expect(model.supportedContentTypes.contains(.rtf))
-        #expect(model.supportedContentTypes.contains(.pdf))
-        #expect(model.supportedContentTypes.contains(UTType(filenameExtension: "docx")!))
+        #expect(supportedContentTypes.contains(.plainText))
+        #expect(supportedContentTypes.contains(.rtf))
+        #expect(supportedContentTypes.contains(.pdf))
+        #expect(supportedContentTypes.contains(UTType(filenameExtension: "docx")!))
     }
 
     @Test
