@@ -1,33 +1,38 @@
-import XCTest
+import Foundation
+import Testing
 import ZIPFoundation
 @testable import ReViser
-internal import UniformTypeIdentifiers
+import UniformTypeIdentifiers
 
-final class ReViserTests: XCTestCase {
-    func testSectionsOverviewOrderMetadata() {
-        XCTAssertEqual(SectionsOverviewOrder.row.label, "Left to right")
-        XCTAssertEqual(SectionsOverviewOrder.row.systemImage, "arrow.left.arrow.right")
-        XCTAssertEqual(SectionsOverviewOrder.column.label, "Top to bottom")
-        XCTAssertEqual(SectionsOverviewOrder.column.systemImage, "arrow.up.arrow.down")
+@Suite("ReViser")
+struct ReViserTests {
+    @Test
+    func sectionsOverviewOrderMetadata() {
+        #expect(SectionsOverviewOrder.row.label == "Left to right")
+        #expect(SectionsOverviewOrder.row.systemImage == "arrow.left.arrow.right")
+        #expect(SectionsOverviewOrder.column.label == "Top to bottom")
+        #expect(SectionsOverviewOrder.column.systemImage == "arrow.up.arrow.down")
     }
 
+    @Test
     @MainActor
-    func testLoadDocumentFromPlainTextCreatesProject() async throws {
+    func loadDocumentFromPlainTextCreatesProject() async throws {
         let model = AppModel()
         let fileURL = try makeTemporaryFile(extension: "txt", contents: "Draft line one\nDraft line two")
 
         await model.loadDocument(from: fileURL)
 
-        XCTAssertEqual(model.importedFileName, fileURL.lastPathComponent)
-        XCTAssertEqual(model.importedText, "Draft line one\nDraft line two")
-        XCTAssertEqual(model.projects.count, 1)
-        XCTAssertEqual(model.projects[0].title, fileURL.deletingPathExtension().lastPathComponent)
-        XCTAssertEqual(model.projects[0].sections.count, 1)
-        XCTAssertEqual(model.projects[0].sections[0].text, "Draft line one\nDraft line two")
+        #expect(model.importedFileName == fileURL.lastPathComponent)
+        #expect(model.importedText == "Draft line one\nDraft line two")
+        #expect(model.projects.count == 1)
+        #expect(model.projects[0].title == fileURL.deletingPathExtension().lastPathComponent)
+        #expect(model.projects[0].sections.count == 1)
+        #expect(model.projects[0].sections[0].text == "Draft line one\nDraft line two")
     }
 
+    @Test
     @MainActor
-    func testLoadDocumentFromDocxExtractsFormattedText() async throws {
+    func loadDocumentFromDocxExtractsFormattedText() async throws {
         let model = AppModel()
         let xml = """
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -45,16 +50,17 @@ final class ReViserTests: XCTestCase {
 
         await model.loadDocument(from: fileURL)
 
-        XCTAssertTrue(model.importedText.contains("**Bold**"))
-        XCTAssertTrue(model.importedText.contains("_Italic_"))
-        XCTAssertTrue(model.importedText.contains("__Underline__"))
-        XCTAssertTrue(model.importedText.contains("~~Strike~~"))
-        XCTAssertEqual(model.projects.count, 1)
-        XCTAssertEqual(model.projects[0].sections.count, 1)
+        #expect(model.importedText.contains("**Bold**"))
+        #expect(model.importedText.contains("_Italic_"))
+        #expect(model.importedText.contains("__Underline__"))
+        #expect(model.importedText.contains("~~Strike~~"))
+        #expect(model.projects.count == 1)
+        #expect(model.projects[0].sections.count == 1)
     }
 
+    @Test
     @MainActor
-    func testUpdateProjectSectionsKeepsProjectTextInSync() {
+    func updateProjectSectionsKeepsProjectTextInSync() {
         let model = AppModel()
         let projectID = UUID()
         model.projects = [
@@ -80,12 +86,13 @@ final class ReViserTests: XCTestCase {
 
         model.updateProjectSections(id: projectID, sections: replacementSections)
 
-        XCTAssertEqual(model.projects[0].sections, replacementSections)
-        XCTAssertEqual(model.projects[0].text, "OneTwoThree")
+        #expect(model.projects[0].sections == replacementSections)
+        #expect(model.projects[0].text == "OneTwoThree")
     }
 
+    @Test
     @MainActor
-    func testUpdateProjectTextCreatesFallbackSectionWhenNeeded() {
+    func updateProjectTextCreatesFallbackSectionWhenNeeded() {
         let model = AppModel()
         let projectID = UUID()
         model.projects = [
@@ -102,13 +109,14 @@ final class ReViserTests: XCTestCase {
 
         model.updateProjectText(id: projectID, text: "Revised manuscript")
 
-        XCTAssertEqual(model.projects[0].text, "Revised manuscript")
-        XCTAssertEqual(model.projects[0].sections.count, 1)
-        XCTAssertEqual(model.projects[0].sections[0].text, "Revised manuscript")
+        #expect(model.projects[0].text == "Revised manuscript")
+        #expect(model.projects[0].sections.count == 1)
+        #expect(model.projects[0].sections[0].text == "Revised manuscript")
     }
 
+    @Test
     @MainActor
-    func testGraveyardRestoreAndPermanentRemoval() {
+    func graveyardRestoreAndPermanentRemoval() {
         let model = AppModel()
         let projectID = UUID()
         let first = Section(id: UUID(), text: "First")
@@ -128,25 +136,26 @@ final class ReViserTests: XCTestCase {
         ]
 
         model.moveSectionToGraveyard(projectID: projectID, section: second, originalIndex: 1)
-        XCTAssertEqual(model.sectionGraveyard.count, 1)
-        XCTAssertEqual(model.sectionGraveyard[0].section, second)
+        #expect(model.sectionGraveyard.count == 1)
+        #expect(model.sectionGraveyard[0].section == second)
 
         let deletedID = model.sectionGraveyard[0].id
         model.updateProjectSections(id: projectID, sections: [first, third])
         model.restoreSectionFromGraveyard(deletedID)
 
-        XCTAssertEqual(model.sectionGraveyard.count, 0)
-        XCTAssertEqual(model.projects[0].sections, [first, second, third])
+        #expect(model.sectionGraveyard.count == 0)
+        #expect(model.projects[0].sections == [first, second, third])
 
         model.moveSectionToGraveyard(projectID: projectID, section: second, originalIndex: 1)
         let permanentID = model.sectionGraveyard[0].id
         model.removeFromGraveyardPermanently(permanentID)
 
-        XCTAssertTrue(model.sectionGraveyard.isEmpty)
+        #expect(model.sectionGraveyard.isEmpty)
     }
 
+    @Test
     @MainActor
-    func testFilteredProjectsAreSearchableAndSortedByRecentChange() {
+    func filteredProjectsAreSearchableAndSortedByRecentChange() {
         let model = AppModel()
         let oldProject = AppModel.Project(
             id: UUID(),
@@ -169,14 +178,15 @@ final class ReViserTests: XCTestCase {
 
         model.projects = [oldProject, newProject]
 
-        XCTAssertEqual(model.filteredProjects.first?.title, "Beta Draft")
+        #expect(model.filteredProjects.first?.title == "Beta Draft")
 
         model.searchQuery = "alpha"
-        XCTAssertEqual(model.filteredProjects.map(\.title), ["Alpha Draft"])
+        #expect(model.filteredProjects.map(\.title) == ["Alpha Draft"])
     }
 
+    @Test
     @MainActor
-    func testPreviewTextPrefersRestitchedSectionsOverProjectText() {
+    func previewTextPrefersRestitchedSectionsOverProjectText() {
         let model = AppModel()
         let project = AppModel.Project(
             id: UUID(),
@@ -191,19 +201,21 @@ final class ReViserTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(model.previewText(for: project, limit: 100), "First section Second section")
+        #expect(model.previewText(for: project, limit: 100) == "First section Second section")
     }
 
-    @MainActor func testSupportedContentTypesIncludeCommonManuscriptFormats() {
+    @Test
+    func supportedContentTypesIncludeCommonManuscriptFormats() {
         let model = AppModel()
 
-        XCTAssertTrue(model.supportedContentTypes.contains(.plainText))
-        XCTAssertTrue(model.supportedContentTypes.contains(.rtf))
-        XCTAssertTrue(model.supportedContentTypes.contains(.pdf))
-        XCTAssertTrue(model.supportedContentTypes.contains(UTType(filenameExtension: "docx")!))
+        #expect(model.supportedContentTypes.contains(.plainText))
+        #expect(model.supportedContentTypes.contains(.rtf))
+        #expect(model.supportedContentTypes.contains(.pdf))
+        #expect(model.supportedContentTypes.contains(UTType(filenameExtension: "docx")!))
     }
 
-    func testDocxFormatterConvertsCommonFormattingMarkers() {
+    @Test
+    func docxFormatterConvertsCommonFormattingMarkers() {
         let xml = """
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
           <w:body>
@@ -221,12 +233,12 @@ final class ReViserTests: XCTestCase {
 
         let formatted = DocxFormatter().convert(documentXML: xml)
 
-        XCTAssertTrue(formatted.contains("**Bold**"))
-        XCTAssertTrue(formatted.contains("_Italic_"))
-        XCTAssertTrue(formatted.contains("__Underline__"))
-        XCTAssertTrue(formatted.contains("~~Strike~~"))
-        XCTAssertTrue(formatted.contains("\t"))
-        XCTAssertTrue(formatted.contains("Plain"))
+        #expect(formatted.contains("**Bold**"))
+        #expect(formatted.contains("_Italic_"))
+        #expect(formatted.contains("__Underline__"))
+        #expect(formatted.contains("~~Strike~~"))
+        #expect(formatted.contains("\t"))
+        #expect(formatted.contains("Plain"))
     }
 
     private func makeTemporaryFile(extension fileExtension: String, contents: String) throws -> URL {
