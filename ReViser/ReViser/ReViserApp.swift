@@ -72,9 +72,11 @@ struct ReViserApp: App {
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 
-        WindowGroup(id: "graveyard-window") {
-            GraveyardWindowScene()
-                .environment(appModel)
+        WindowGroup(id: "graveyard-window", for: UUID.self) { $projectID in
+            if let projectID {
+                GraveyardWindowScene(projectID: projectID)
+                    .environment(appModel)
+            }
         }
         .windowStyle(.automatic)
         .windowResizability(.automatic)

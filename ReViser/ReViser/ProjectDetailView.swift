@@ -241,12 +241,12 @@ struct ProjectDetailView: View {
                         .frame(width: 32, height: 32)
                         .foregroundColor(splitMode ? .blue : .gray)
                 }
-                .help("Split text")
+                .help("Split text into sections")
 
                 Button {
                     windowMode.toggle()
                 } label: {
-                    Image(systemName: "rectangle.on.rectangle")
+                    Image(systemName: "rectangle.2.swap")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 28, height: 28)
@@ -276,6 +276,17 @@ struct ProjectDetailView: View {
                         .foregroundColor(showingRestitchedManuscript ? .blue : .gray)
                 }
                 .help(showingRestitchedManuscript ? "Close restitched manuscript" : "View restitched manuscript")
+
+                Button {
+                    openWindow(id: "graveyard-window", value: projectID)
+                } label: {
+                    Image("crumpled-paper", bundle: .radixUI)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(.gray)
+                }
+                .help("View deleted sections for this project")
 
                 Button {
                     model.noteMode.toggle()

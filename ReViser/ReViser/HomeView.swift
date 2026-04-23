@@ -10,40 +10,72 @@ struct HomeView: View {
 
     var body: some View {
         @Bindable var model = model
-        ZStack(alignment: .topLeading) {
-            // Main content
+        ZStack {
             VStack(spacing: 24) {
-                VStack(spacing: 8) {
-                    Text("ReViser")
-                        .font(.largeTitle)
-                        .bold()
-                    Text("A spatial visualization editing application")
-                        .foregroundStyle(.secondary)
-                }
+                HStack(alignment: .center) {
+                    VStack(spacing: 8) {
+                        Text("ReViser")
+                            .font(.largeTitle)
+                            .bold()
+                        Text("A spatial visualization editing application")
+                            .foregroundStyle(.secondary)
+                    }
 
-                // Search field for project titles
-                TextField("Search projects", text: $model.searchQuery)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 600)
+                    Spacer()
+
+                    HStack(spacing: 10) {
+                        Button {
+                            showingImporter = true
+                        } label: {
+                            Label("Import Document", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button {
+                            openWindow(id: "compare-window")
+                        } label: {
+                            Label("Compare Drafts", systemImage: "rectangle.split.2x1")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .frame(maxWidth: 1100)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .padding(.top, 14)
+
+                VStack(spacing: 10) {
+                    // Search field for project titles
+                    TextField("Search projects", text: $model.searchQuery)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .frame(maxWidth: 1100)
 
                 // Projects list
                 if model.filteredProjects.isEmpty {
                     ContentUnavailableView("No Projects", systemImage: "doc.on.doc", description: Text("Import a document to create a project."))
                         .frame(maxWidth: .infinity)
                 } else {
+                    let projectColumns = [
+                        GridItem(.flexible(minimum: 280), spacing: 16),
+                        GridItem(.flexible(minimum: 280), spacing: 16)
+                    ]
+
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 16) {
+                        LazyVGrid(columns: projectColumns, alignment: .leading, spacing: 16) {
                             ForEach(model.filteredProjects) { project in
                                 NavigationLink(destination: ProjectDetailView(projectID: project.id)) {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(project.title)
                                             .font(.headline)
                                             .foregroundStyle(.primary)
+                                            .lineLimit(1)
                                         Text(model.previewText(for: project))
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
+                                            .lineLimit(4)
                                     }
-                                    .frame(maxWidth: 800, alignment: .leading)
+                                    .frame(maxWidth: .infinity, minHeight: 110, maxHeight: 110, alignment: .topLeading)
                                     .padding(16)
                                     .background(
                                         RoundedRectangle(cornerRadius: 14)
@@ -67,44 +99,6 @@ struct HomeView: View {
                 Spacer(minLength: 0)
             }
             .padding(32)
-
-            // Floating breakthrough menu button (top-left)
-            Menu {
-                Button {
-                    showingImporter = true
-                } label: {
-                    Label("Import Document", systemImage: "square.and.arrow.up")
-                }
-
-                Button {
-                    openWindow(id: "compare-window")
-                } label: {
-                    Label("Compare Drafts", systemImage: "rectangle.2.swap")
-                }
-
-                Button {
-                    openWindow(id: "graveyard-window")
-                } label: {
-                    Label {
-                        Text("View Graveyard")
-                    } icon: { // idk sizing weird here todo
-                        Image("crumpled-paper", bundle: .radixUI)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 32, height: 32)
-                    }
-                }
-            } label: {
-                // Hamburger icon only; background fully blends
-                Image(systemName: "line.3.horizontal")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .padding(8)
-            }
-            // Slight offset down and right
-            .padding(.top, 20)
-            .padding(.leading, 20)
-            .background(.clear)
         }
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: model.supportedContentTypes) { result in
             switch result {
@@ -318,55 +312,56 @@ struct GraveyardWindowScene: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var selectedGraveyardItem: AppModel.DeletedSection?
+    let projectID: UUID
 
     var body: some View {
         NavigationStack {
             Group {
-                if model.sectionGraveyard.isEmpty {
+                if projectGraveyardItems.isEmpty {
                     ContentUnavailableView(
                         "Graveyard is empty",
                         systemImage: "trash",
-                        description: Text("Deleted sections will appear here.")
+                        description: Text("Deleted sections for this project will appear here.")
                     )
                 } else {
                     List {
-                        ForEach(groupedGraveyard, id: \.projectID) { group in
-                            SwiftUI.Section {
-                                ForEach(group.items) { item in
-                                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(projectGraveyardItems) { item in
+                            VStack(alignment: .leading, spacing: 10) {
 
-                                        Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(600)))
-                                            .font(.headline)
-                                            .foregroundStyle(.secondary)
+                                Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(600)))
+                                    .font(.headline)
+                                    .foregroundStyle(.secondary)
 
-                                        HStack(spacing: 10) {
-                                            Button("View") {
-                                                selectedGraveyardItem = item
-                                            }
-                                            .buttonStyle(.bordered)
-
-                                            Button("Restore") {
-                                                model.restoreSectionFromGraveyard(item.id)
-                                            }
-                                            .buttonStyle(.borderedProminent)
-
-                                            Button("Delete Permanently", role: .destructive) {
-                                                model.removeFromGraveyardPermanently(item.id)
-                                            }
-                                            .buttonStyle(.bordered)
-                                        }
+                                HStack(spacing: 10) {
+                                    Button("View") {
+                                        selectedGraveyardItem = item
                                     }
-                                    .padding(.vertical, 6)
+                                    .buttonStyle(.bordered)
+
+                                    Button("Restore") {
+                                        model.restoreSectionFromGraveyard(item.id)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+
+                                    Button("Delete Permanently", role: .destructive) {
+                                        model.removeFromGraveyardPermanently(item.id)
+                                    }
+                                    .buttonStyle(.bordered)
                                 }
-                            } header: {
-                                Text(group.projectTitle)
                             }
+                            .padding(.vertical, 6)
                         }
                     }
                 }
             }
             .navigationTitle("Graveyard")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Text(projectTitle)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         dismissWindow(id: "graveyard-window")
@@ -379,23 +374,14 @@ struct GraveyardWindowScene: View {
         }
     }
 
-    private var groupedGraveyard: [(projectID: UUID, projectTitle: String, items: [AppModel.DeletedSection])] {
-        let groupedByProject = Dictionary(grouping: model.sectionGraveyard, by: \.projectID)
+    private var projectTitle: String {
+        model.projects.first(where: { $0.id == projectID })?.title ?? "Project"
+    }
 
-        return groupedByProject
-            .compactMap { projectID, items in
-                guard let first = items.first else { return nil }
-                return (
-                    projectID: projectID,
-                    projectTitle: first.projectTitle,
-                    items: items.sorted { $0.deletedAt > $1.deletedAt }
-                )
-            }
-            .sorted {
-                let lhsDate = $0.items.first?.deletedAt ?? .distantPast
-                let rhsDate = $1.items.first?.deletedAt ?? .distantPast
-                return lhsDate > rhsDate
-            }
+    private var projectGraveyardItems: [AppModel.DeletedSection] {
+        model.sectionGraveyard
+            .filter { $0.projectID == projectID }
+            .sorted { $0.deletedAt > $1.deletedAt }
     }
 }
 
