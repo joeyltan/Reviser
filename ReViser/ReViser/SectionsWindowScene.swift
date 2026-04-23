@@ -49,6 +49,8 @@ struct SectionsWindowScene: View {
                                 } label: {
                                     Label("Return to Text", systemImage: "arrow.left.circle")
                                 }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
                             }
 
                             ToolbarItem(placement: .topBarTrailing) {
@@ -57,6 +59,8 @@ struct SectionsWindowScene: View {
                                 } label: {
                                     Label(overviewOrder.label, systemImage: overviewOrder.systemImage)
                                 }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
                                 .help("Switch section ordering")
                             }
 
@@ -66,6 +70,8 @@ struct SectionsWindowScene: View {
                                 } label: {
                                     Label("Save Reorder", systemImage: "checkmark.circle")
                                 }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
                                 .disabled(!hasPendingReorder)
                             }
                         }
@@ -289,11 +295,11 @@ struct SectionsOverviewCard: View {
 
                 HStack {
                     Text("\(index + 1)")
-                        .font(.headline)
+                        .font(.title2)
                         .foregroundStyle(.primary)
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 50, height: 50)
                         .background(
                             Circle().fill(Color.secondary.opacity(0.12))
                         )
