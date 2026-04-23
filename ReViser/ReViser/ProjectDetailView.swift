@@ -33,6 +33,8 @@ struct ProjectDetailView: View {
     @State private var showingRestitchedManuscript: Bool = false
     @State private var showingRestitchedDocxExport: Bool = false
     @State private var restitchedDocxDocument = RestitchedManuscriptDocxDocument(text: "")
+    @State private var showingCustomFontSizeSheet: Bool = false
+    @State private var customFontSizeValue: Double = 25
 
     @State private var activeSectionID: UUID?
     @State private var caretIndexBySection: [UUID: Int] = [:]
@@ -120,6 +122,9 @@ struct ProjectDetailView: View {
                         }
                     }
                 }
+            }
+            .sheet(isPresented: $showingCustomFontSizeSheet) {
+                customFontSizeSheet
             }
             .onAppear {
                 projectUndoStack.removeAll()
@@ -377,6 +382,30 @@ struct ProjectDetailView: View {
                         }
                     }
 
+                    Menu("Font Type") {
+                        Button { applyTextFontType(.system) } label: {
+                            fontTypeRow(title: "System", design: nil)
+                        }
+                        Button { applyTextFontType(.serif) } label: {
+                            fontTypeRow(title: "Serif", design: .serif)
+                        }
+                        Button { applyTextFontType(.rounded) } label: {
+                            fontTypeRow(title: "Rounded", design: .rounded)
+                        }
+                        Button { applyTextFontType(.monospaced) } label: {
+                            fontTypeRow(title: "Monospaced", design: .monospaced)
+                        }
+                    }
+
+                    Menu("Font Size") {
+                        Button {
+                            customFontSizeValue = 25
+                            showingCustomFontSizeSheet = true
+                        } label: {
+                            Label("Custom Size…", systemImage: "number")
+                        }
+                    }
+
                 } label: {
                     Image(systemName: "textformat.alt")
                         .resizable()
@@ -614,6 +643,20 @@ struct ProjectDetailView: View {
                 Button("Green") { applyTextHighlight(.green) }
                 Button("Pink") { applyTextHighlight(.pink) }
                 Button("Blue") { applyTextHighlight(.blue) }
+            }
+
+            Menu("Font Type") {
+                Button("System") { applyTextFontType(.system) }
+                Button("Serif") { applyTextFontType(.serif) }
+                Button("Rounded") { applyTextFontType(.rounded) }
+                Button("Monospaced") { applyTextFontType(.monospaced) }
+            }
+
+            Menu("Font Size") {
+                Button("Custom Size…") {
+                    customFontSizeValue = 25
+                    showingCustomFontSizeSheet = true
+                }
             }
         } label: {
             Label("Text Styling", systemImage: "wand.and.sparkles")
@@ -1340,6 +1383,8 @@ struct ProjectDetailView: View {
             highlightedSnippets: textTaggedSnippets,
             textColors: section.colors,
             textHighlights: section.highlights,
+            textFontTypes: section.fontTypes,
+            textFontSizes: section.fontSizes,
             splitMode: splitMode,
             snappedY: $snappedY,
             onSplit: { y in
@@ -1519,6 +1564,8 @@ struct ProjectDetailView: View {
                     highlightedSnippets: textTaggedSnippets,
                     textColors: section.colors,
                     textHighlights: section.highlights,
+                    textFontTypes: section.fontTypes,
+                    textFontSizes: section.fontSizes,
                     splitMode: splitMode,
                     snappedY: $snappedY,
                     onSplit: { y in
@@ -2227,6 +2274,57 @@ struct ProjectDetailView: View {
         }
     }
 
+    enum TextFontTypeStyle: String {
+        case system
+        case serif
+        case rounded
+        case monospaced
+
+        var design: Font.Design? {
+            switch self {
+            case .system: return nil
+            case .serif: return .serif
+            case .rounded: return .rounded
+            case .monospaced: return .monospaced
+            }
+        }
+
+        var uiKitDesign: UIFontDescriptor.SystemDesign? {
+            switch self {
+            case .system: return nil
+            case .serif: return .serif
+            case .rounded: return .rounded
+            case .monospaced: return .monospaced
+            }
+        }
+    }
+
+    enum TextFontSizeStyle: String {
+        case small
+        case medium
+        case large
+        case extraLarge
+
+        var pointSize: CGFloat {
+            switch self {
+            case .small: return 18
+            case .medium: return 25
+            case .large: return 32
+            case .extraLarge: return 40
+            }
+        }
+
+        static func pointSize(for styleValue: String) -> CGFloat? {
+            if let preset = TextFontSizeStyle(rawValue: styleValue) {
+                return preset.pointSize
+            }
+
+            let prefix = "custom:"
+            guard styleValue.hasPrefix(prefix) else { return nil }
+            return CGFloat(Double(styleValue.dropFirst(prefix.count)) ?? 0)
+        }
+    }
+
     enum TextHighlightStyle: String {
         case yellow
         case orange
@@ -2278,6 +2376,49 @@ struct ProjectDetailView: View {
         toggleTextStyleRange(selectedRange, in: &sections[index].highlights, style: highlight.rawValue)
     }
 
+    func applyTextFontType(_ fontType: TextFontTypeStyle) {
+        guard let activeSectionID = activeSectionID,
+              let textView = textViews[activeSectionID],
+              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+
+        let selectedRange = textView.selectedRange
+        guard selectedRange.length > 0 else { return }
+
+        let nsText = sections[index].text as NSString
+        guard selectedRange.location + selectedRange.length <= nsText.length else { return }
+
+        toggleTextStyleRange(selectedRange, in: &sections[index].fontTypes, style: fontType.rawValue)
+    }
+
+    func applyTextFontSize(_ fontSize: TextFontSizeStyle) {
+        guard let activeSectionID = activeSectionID,
+              let textView = textViews[activeSectionID],
+              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+
+        let selectedRange = textView.selectedRange
+        guard selectedRange.length > 0 else { return }
+
+        let nsText = sections[index].text as NSString
+        guard selectedRange.location + selectedRange.length <= nsText.length else { return }
+
+        toggleTextStyleRange(selectedRange, in: &sections[index].fontSizes, style: fontSize.rawValue)
+    }
+
+    func applyTextFontSize(_ pointSize: CGFloat) {
+        guard let activeSectionID = activeSectionID,
+              let textView = textViews[activeSectionID],
+              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+
+        let selectedRange = textView.selectedRange
+        guard selectedRange.length > 0 else { return }
+
+        let nsText = sections[index].text as NSString
+        guard selectedRange.location + selectedRange.length <= nsText.length else { return }
+
+        let roundedPointSize = Int(pointSize.rounded())
+        toggleTextStyleRange(selectedRange, in: &sections[index].fontSizes, style: "custom:\(roundedPointSize)")
+    }
+
     @ViewBuilder
     private func colorPaletteRow(title: String, color: UIColor) -> some View {
         HStack(spacing: 8) {
@@ -2289,9 +2430,77 @@ struct ProjectDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private func fontTypeRow(title: String, design: Font.Design?) -> some View {
+        if let design {
+            Text(title)
+                .font(.system(size: 16, design: design))
+        } else {
+            Text(title)
+                .font(.system(size: 16))
+        }
+    }
+
+    @ViewBuilder
+    private var customFontSizeSheet: some View {
+        NavigationStack {
+            Form {
+                SwiftUI.Section("Font Size") {
+                    HStack(spacing: 12) {
+                        Button {
+                            adjustCustomFontSize(by: -1)
+                        } label: {
+                            Image(systemName: "minus")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(customFontSizeValue <= 8)
+
+                        TextField("Size", value: $customFontSizeValue, format: .number.precision(.fractionLength(0)))
+                            .multilineTextAlignment(.center)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 100)
+
+                        Button {
+                            adjustCustomFontSize(by: 1)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(customFontSizeValue >= 96)
+                    }
+
+                    Text("\(Int(customFontSizeValue.rounded())) pt")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Custom Font Size")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingCustomFontSizeSheet = false
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        applyTextFontSize(customFontSizeValue)
+                        showingCustomFontSizeSheet = false
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 320, minHeight: 240)
+    }
+
     private func swatchImage(_ color: UIColor) -> UIImage? {
         let configuration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
         return UIImage(systemName: "circle.fill", withConfiguration: configuration)?.withTintColor(color, renderingMode: .alwaysOriginal)
+    }
+
+    private func adjustCustomFontSize(by delta: Double) {
+        customFontSizeValue = min(max(customFontSizeValue + delta, 8), 96)
     }
 
     private func toggleTextStyleRange(_ selectedRange: NSRange, in ranges: inout [TextStyleRange], style: String) {
@@ -2648,6 +2857,8 @@ struct TextKitView: UIViewRepresentable {
     var highlightedSnippets: Set<String> = []
     var textColors: [TextStyleRange] = []
     var textHighlights: [TextStyleRange] = []
+    var textFontTypes: [TextStyleRange] = []
+    var textFontSizes: [TextStyleRange] = []
     var splitMode: Bool
     @Binding var snappedY: CGFloat
     var onSplit: (CGFloat) -> Void
@@ -2718,6 +2929,8 @@ struct TextKitView: UIViewRepresentable {
             .foregroundColor: UIColor.label
         ], range: fullRange)
 
+        applyFontTypeStyles(to: attributed, text: text, fontTypes: textFontTypes)
+        applyFontSizeStyles(to: attributed, text: text, fontSizes: textFontSizes)
         applyColorStyles(to: attributed, text: text, colors: textColors)
         applyHighlightStyles(to: attributed, text: text, highlights: textHighlights)
 
@@ -2763,6 +2976,40 @@ struct TextKitView: UIViewRepresentable {
             let nsRange = range.nsRange
             guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
             attributed.addAttribute(.foregroundColor, value: style.uiColor, range: nsRange)
+        }
+    }
+
+    private func applyFontTypeStyles(to attributed: NSMutableAttributedString, text: String, fontTypes: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in fontTypes {
+            guard let style = ProjectDetailView.TextFontTypeStyle(rawValue: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+
+            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 25)
+            let font: UIFont
+            if let design = style.uiKitDesign, let designedFont = existingFont.fontDescriptor.withDesign(design).flatMap({ UIFont(descriptor: $0, size: existingFont.pointSize) }) {
+                font = designedFont
+            } else {
+                font = UIFont.systemFont(ofSize: existingFont.pointSize)
+            }
+
+            attributed.addAttribute(.font, value: font, range: nsRange)
+        }
+    }
+
+    private func applyFontSizeStyles(to attributed: NSMutableAttributedString, text: String, fontSizes: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in fontSizes {
+            guard let pointSize = ProjectDetailView.TextFontSizeStyle.pointSize(for: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+
+            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 25)
+            let font = existingFont.withSize(pointSize)
+            attributed.addAttribute(.font, value: font, range: nsRange)
         }
     }
 
@@ -2830,14 +3077,18 @@ struct Section: Identifiable, Codable, Equatable {
     var resolvedNotes: [String] = []
     var colors: [TextStyleRange] = []
     var highlights: [TextStyleRange] = []
+    var fontTypes: [TextStyleRange] = []
+    var fontSizes: [TextStyleRange] = []
 
-    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = [], colors: [TextStyleRange] = [], highlights: [TextStyleRange] = []) {
+    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = [], colors: [TextStyleRange] = [], highlights: [TextStyleRange] = [], fontTypes: [TextStyleRange] = [], fontSizes: [TextStyleRange] = []) {
         self.id = id
         self.text = text
         self.notes = notes
         self.resolvedNotes = resolvedNotes
         self.colors = colors
         self.highlights = highlights
+        self.fontTypes = fontTypes
+        self.fontSizes = fontSizes
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2847,6 +3098,8 @@ struct Section: Identifiable, Codable, Equatable {
         case resolvedNotes
         case colors
         case highlights
+        case fontTypes
+        case fontSizes
     }
 
     init(from decoder: Decoder) throws {
@@ -2857,6 +3110,8 @@ struct Section: Identifiable, Codable, Equatable {
         resolvedNotes = try container.decodeIfPresent([String].self, forKey: .resolvedNotes) ?? []
         colors = try container.decodeIfPresent([TextStyleRange].self, forKey: .colors) ?? []
         highlights = try container.decodeIfPresent([TextStyleRange].self, forKey: .highlights) ?? []
+        fontTypes = try container.decodeIfPresent([TextStyleRange].self, forKey: .fontTypes) ?? []
+        fontSizes = try container.decodeIfPresent([TextStyleRange].self, forKey: .fontSizes) ?? []
     }
 }
 
