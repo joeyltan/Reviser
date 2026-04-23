@@ -201,6 +201,14 @@ struct ProjectDetailView: View {
         }
     }
 
+    private var hasAnyTaggedContent: Bool {
+        !usedTagsInProject().isEmpty
+    }
+
+    private var availableFilterTags: [String] {
+        filterableTags()
+    }
+
     @ViewBuilder
     private var toolbarView: some View {
         if showToolbar {
@@ -289,13 +297,7 @@ struct ProjectDetailView: View {
                 .help("View deleted sections for this project")
 
                 Button {
-                    model.noteMode.toggle()
-                    if !model.noteMode {
-                        visibleNoteSectionIDs.removeAll()
-                        visibleNoteOptionsSectionIDs.removeAll()
-                        visibleResolvedNoteSectionIDs.removeAll()
-                        editingNoteKeys.removeAll()
-                    }
+                    toggleNotesMode()
                 } label: {
                     Image(systemName: "note.text.badge.plus")
                         .resizable()
@@ -361,8 +363,6 @@ struct ProjectDetailView: View {
                     }
                     
                     // New tag button
-                    let availableFilterTags = filterableTags()
-                    let hasAnyTaggedContent = !usedTagsInProject().isEmpty
                     Button(action: {
                         showingNewTagAlert = true
                     }) {
@@ -459,6 +459,178 @@ struct ProjectDetailView: View {
             .frame(width: 60)
             .padding()
             .background(Color(white: 0.95))
+            .contextMenu {
+                ToolbarContextMenu
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var ToolbarContextMenu: some View {
+        Button {
+            undoLastProjectChange()
+        } label: {
+            Label("Undo", systemImage: "arrow.uturn.backward")
+        }
+        .disabled(projectUndoStack.isEmpty)
+
+        Button {
+            redoLastProjectChange()
+        } label: {
+            Label("Redo", systemImage: "arrow.uturn.forward")
+        }
+        .disabled(projectRedoStack.isEmpty)
+
+        Divider()
+
+        Button {
+            splitAtCurrentCaret()
+        } label: {
+            Label("Split Text Into Sections", systemImage: "row-spacing")
+        }
+
+        Button {
+            windowMode.toggle()
+        } label: {
+            Label("Reorder and View Section Overview", systemImage: "rectangle.2.swap")
+        }
+
+        Button {
+            openAllSectionsInWindows()
+        } label: {
+            Label("Open All Sections in Windows", systemImage: "rectangle.grid.2x2")
+        }
+        .disabled(openingAllSectionWindows || sections.isEmpty)
+
+        Button {
+            showingRestitchedManuscript.toggle()
+        } label: {
+            Label("Restitched Manuscript", systemImage: "doc.text")
+        }
+
+        Button {
+            openWindow(id: "graveyard-window", value: projectID)
+        } label: {
+            Label("Deleted Sections", systemImage: "trash")
+        }
+
+        Button {
+            model.noteMode.toggle()
+            if !model.noteMode {
+                visibleNoteSectionIDs.removeAll()
+                visibleNoteOptionsSectionIDs.removeAll()
+                visibleResolvedNoteSectionIDs.removeAll()
+                editingNoteKeys.removeAll()
+            }
+        } label: {
+            Label("Notes Mode", systemImage: "note.text.badge.plus")
+        }
+
+        Divider()
+
+        Menu {
+            Button {
+                applyStyle(.bold)
+            } label: {
+                Label("Bold", systemImage: "bold")
+            }
+
+            Button {
+                applyStyle(.italic)
+            } label: {
+                Label("Italic", systemImage: "italic")
+            }
+
+            Button {
+                applyStyle(.underline)
+            } label: {
+                Label("Underline", systemImage: "underline")
+            }
+
+            Button {
+                applyStyle(.strikethrough)
+            } label: {
+                Label("Strikethrough", systemImage: "strikethrough")
+            }
+        } label: {
+            Label("Text Styling", systemImage: "wand.and.sparkles")
+        }
+
+        Menu {
+            if !customTagCategories.isEmpty {
+                SwiftUI.Section("Tags") {
+                    ForEach(customTagCategories.sorted(), id: \.self) { tag in
+                        Button {
+                            toggleTagOnActiveSection(tag)
+                        } label: {
+                            HStack {
+                                Text(tag)
+
+                                let tagState = tagApplicationStateInActiveContext(tag)
+                                if tagState != .none {
+                                    tagStateMenuBadge(tagState)
+                                }
+                            }
+                        }
+                    }
+                }
+                Divider()
+            }
+
+            Button {
+                showingNewTagAlert = true
+            } label: {
+                Label("Add New Tag Category", systemImage: "plus")
+            }
+
+            Divider()
+
+            Button {
+                showFilteredTimeline.toggle()
+            } label: {
+                HStack {
+                    Text("Show as linked timeline")
+                    Spacer()
+                    if showFilteredTimeline {
+                        Image(systemName: "checkmark")
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            .disabled(!hasAnyTaggedContent)
+
+            Divider()
+
+            if !availableFilterTags.isEmpty {
+                Button {
+                    activeFilterTags.removeAll()
+                } label: {
+                    Label("Clear Filters", systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .disabled(activeFilterTags.isEmpty)
+
+                Divider()
+
+                ForEach(availableFilterTags, id: \.self) { tag in
+                    Button {
+                        if activeFilterTags.contains(tag) {
+                            activeFilterTags.remove(tag)
+                        } else {
+                            activeFilterTags.insert(tag)
+                        }
+                    } label: {
+                        HStack {
+                            Text(tag)
+                            if activeFilterTags.contains(tag) {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label("Tag and Filter", systemImage: "tag.fill")
         }
     }
 
@@ -470,6 +642,150 @@ struct ProjectDetailView: View {
             Image(systemName: showToolbar ? "chevron.left" : "chevron.right")
         }
         .frame(width: 30)
+        .contextMenu {
+            ToolbarContextMenu
+        }
+    }
+
+    private func toggleNotesMode() {
+        model.noteMode.toggle()
+        if !model.noteMode {
+            visibleNoteSectionIDs.removeAll()
+            visibleNoteOptionsSectionIDs.removeAll()
+            visibleResolvedNoteSectionIDs.removeAll()
+            editingNoteKeys.removeAll()
+        }
+    }
+
+    private func selectionEditMenu(suggestedActions: [UIMenuElement]) -> UIMenu {
+        let toolMenu = UIMenu(title: "ReViser Tools", children: [
+            UIAction(
+                title: "Undo",
+                image: UIImage(systemName: "arrow.uturn.backward"),
+                attributes: projectUndoStack.isEmpty ? [.disabled] : []
+            ) { _ in
+                undoLastProjectChange()
+            },
+            UIAction(
+                title: "Redo",
+                image: UIImage(systemName: "arrow.uturn.forward"),
+                attributes: projectRedoStack.isEmpty ? [.disabled] : []
+            ) { _ in
+                redoLastProjectChange()
+            },
+            UIAction(
+                title: "Split Text",
+                image: UIImage(systemName: "row.spacing")
+            ) { _ in
+                splitAtCurrentCaret()
+            },
+            UIAction(
+                title: "Reorder",
+                image: UIImage(systemName: "rectangle.2.swap")
+            ) { _ in
+                windowMode.toggle()
+            },
+            UIAction(
+                title: "Open All",
+                image: UIImage(systemName: "rectangle.grid.2x2"),
+                attributes: (openingAllSectionWindows || sections.isEmpty) ? [.disabled] : []
+            ) { _ in
+                openAllSectionsInWindows()
+            },
+            UIAction(
+                title: showingRestitchedManuscript ? "Close Restitched Manuscript" : "View Restitched Manuscript",
+                image: UIImage(systemName: "doc.text")
+            ) { _ in
+                showingRestitchedManuscript.toggle()
+            },
+            UIAction(
+                title: "Graveyard",
+                image: UIImage(systemName: "trash")
+            ) { _ in
+                openWindow(id: "graveyard-window", value: projectID)
+            },
+            UIAction(
+                title: "Notes",
+                image: UIImage(systemName: "note.text.badge.plus")
+            ) { _ in
+                toggleNotesMode()
+            }
+        ])
+
+        let stylingMenu = UIMenu(title: "Text Styling", children: [
+            UIAction(title: "Bold", image: UIImage(systemName: "bold")) { _ in
+                applyStyle(.bold)
+            },
+            UIAction(title: "Italic", image: UIImage(systemName: "italic")) { _ in
+                applyStyle(.italic)
+            },
+            UIAction(title: "Underline", image: UIImage(systemName: "underline")) { _ in
+                applyStyle(.underline)
+            },
+            UIAction(title: "Strikethrough", image: UIImage(systemName: "strikethrough")) { _ in
+                applyStyle(.strikethrough)
+            }
+        ])
+
+        let filterActions = availableFilterTags.map { tag in
+            UIAction(
+                title: tag,
+                state: activeFilterTags.contains(tag) ? .on : .off
+            ) { _ in
+                if activeFilterTags.contains(tag) {
+                    activeFilterTags.remove(tag)
+                } else {
+                    activeFilterTags.insert(tag)
+                }
+            }
+        }
+
+        let tagActions = customTagCategories.sorted().map { tag in
+            UIAction(
+                title: tag,
+                state: tagApplicationStateInActiveContext(tag) == .none ? .off : .on
+            ) { _ in
+                toggleTagOnActiveSection(tag)
+            }
+        }
+
+        let addTagCategoryAction = UIAction(
+            title: "New Tag",
+            image: UIImage(systemName: "plus")
+        ) { _ in
+            showingNewTagAlert = true
+        }
+
+        let toggleTimelineAction = UIAction(
+            title: showFilteredTimeline ? "Hide Linked" : "Show linked",
+            image: UIImage(systemName: "tag.fill"),
+            attributes: hasAnyTaggedContent ? [] : [.disabled]
+        ) { _ in
+            showFilteredTimeline.toggle()
+        }
+
+        let clearFiltersAction = UIAction(
+            title: "Clear Filters",
+            image: UIImage(systemName: "line.3.horizontal.decrease.circle"),
+            attributes: activeFilterTags.isEmpty ? [.disabled] : []
+        ) { _ in
+            activeFilterTags.removeAll()
+        }
+
+        var tagMenuChildren: [UIMenuElement] = []
+        if !tagActions.isEmpty {
+            tagMenuChildren.append(UIMenu(title: "Tag Text", children: tagActions))
+        }
+        tagMenuChildren.append(addTagCategoryAction)
+        tagMenuChildren.append(toggleTimelineAction)
+        tagMenuChildren.append(UIMenu(title: "Filters", children: [
+            clearFiltersAction,
+            UIMenu(title: "Active Tags", children: filterActions)
+        ]))
+
+        let tagMenu = UIMenu(title: "Tag & Filter", children: tagMenuChildren)
+
+        return UIMenu(children: [toolMenu, stylingMenu, tagMenu] + suggestedActions)
     }
 
     @ViewBuilder
@@ -965,6 +1281,9 @@ struct ProjectDetailView: View {
             ),
             onHighlightedSnippetAnchorsChange: { snippetPoints in
                 linkedTimelineSnippetPoints[section.id] = snippetPoints
+            },
+            selectionMenuBuilder: { suggestedActions in
+                selectionEditMenu(suggestedActions: suggestedActions)
             }
         )
         .multilineTextAlignment(.leading)
@@ -1136,7 +1455,10 @@ struct ProjectDetailView: View {
                     calculatedHeight: Binding(
                         get: { sectionHeights[section.id] ?? 100 },
                         set: { sectionHeights[section.id] = $0 }
-                    )
+                    ),
+                    selectionMenuBuilder: { suggestedActions in
+                        selectionEditMenu(suggestedActions: suggestedActions)
+                    }
                 )
                 .multilineTextAlignment(.leading)
                 .frame(height: sectionHeights[section.id] ?? 100)
@@ -2122,6 +2444,7 @@ struct TextKitView: UIViewRepresentable {
     var onSelectionChange: (Int, Int) -> Void
     @Binding var calculatedHeight: CGFloat
     var onHighlightedSnippetAnchorsChange: (([String: [CGPoint]]) -> Void)? = nil
+    var selectionMenuBuilder: (([UIMenuElement]) -> UIMenu?)? = nil
 
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
@@ -2255,6 +2578,11 @@ struct TextKitView: UIViewRepresentable {
         
         func textViewDidChangeSelection(_ textView: UITextView) {
             parent.onSelectionChange(textView.selectedRange.location, textView.selectedRange.length)
+        }
+
+        @available(iOS 16.0, *)
+        func textView(_ textView: UITextView, editMenuForTextIn textRange: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            parent.selectionMenuBuilder?(suggestedActions)
         }
     }
 }

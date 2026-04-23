@@ -47,7 +47,7 @@ class AppModel {
     var elevateSectionWindowsForBulkOpen: Bool = false
     var sectionGraveyard: [DeletedSection] = []
 
-    // MARK: - Projects
+    // Projects
     var projects: [Project] = []
     var searchQuery: String = ""
 
@@ -60,7 +60,7 @@ class AppModel {
             .sorted { $0.lastModified > $1.lastModified }
     }
 
-    // MARK: - Document importing state
+    // Document importing state
     var importedText: String = ""
     var importedFileName: String? = nil
 
