@@ -235,7 +235,7 @@ struct ProjectDetailView: View {
                 Button {
                     splitAtCurrentCaret()
                 } label: {
-                    Image("scissors", bundle: .radixUI)
+                    Image("row-spacing", bundle: .radixUI)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 32, height: 32)
