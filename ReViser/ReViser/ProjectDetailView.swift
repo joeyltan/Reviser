@@ -1870,21 +1870,56 @@ struct ProjectDetailView: View {
     func splitAtCurrentCaret() {
         guard let id = activeSectionID,
               let index = sections.firstIndex(where: { $0.id == id }),
-              let caret = caretIndexBySection[id] else { return }
+              let textView = textViews[id] else { return }
 
         let text = sections[index].text
-        let safeCaret = min(max(caret, 0), text.count)
-        let splitIdx = text.index(text.startIndex, offsetBy: safeCaret)
+        let nsText = text as NSString
+        let selectedRange = textView.selectedRange
+        let clampedLocation = min(max(selectedRange.location, 0), nsText.length)
+        let clampedLength = min(max(selectedRange.length, 0), nsText.length - clampedLocation)
+        let clampedRange = NSRange(location: clampedLocation, length: clampedLength)
 
-        let first = String(text[..<splitIdx])
-        let second = String(text[splitIdx...])
+        let first = nsText.substring(to: clampedRange.location)
+        let middle = clampedRange.length > 0 ? nsText.substring(with: clampedRange) : ""
+        let second = nsText.substring(from: clampedRange.location + clampedRange.length)
 
         sections.remove(at: index)
+
+        textViews[id] = nil
+        sectionHeights[id] = nil
+        caretIndexBySection[id] = nil
+        visibleNoteOptionsSectionIDs.remove(id)
+        visibleNoteSectionIDs.remove(id)
+        visibleResolvedNoteSectionIDs.remove(id)
+        noteDraftBySection[id] = nil
+        editingNoteKeys = editingNoteKeys.filter { !$0.hasPrefix("\(id.uuidString)-") }
+
+        var insertedSectionIDs: [UUID] = []
+
         if !first.isEmpty {
-            sections.insert(Section(id: UUID(), text: first), at: index)
+            let firstSectionID = UUID()
+            sections.insert(Section(id: firstSectionID, text: first), at: index)
+            insertedSectionIDs.append(firstSectionID)
         }
+
+        if !middle.isEmpty {
+            let middleSectionID = UUID()
+            sections.insert(Section(id: middleSectionID, text: middle), at: index + insertedSectionIDs.count)
+            insertedSectionIDs.append(middleSectionID)
+        }
+
         if !second.isEmpty {
-            sections.insert(Section(id: UUID(), text: second), at: index + (first.isEmpty ? 0 : 1))
+            let secondSectionID = UUID()
+            sections.insert(Section(id: secondSectionID, text: second), at: index + insertedSectionIDs.count)
+            insertedSectionIDs.append(secondSectionID)
+        }
+
+        if let newActiveSectionID = insertedSectionIDs.first(where: { sectionID in
+            sections.first(where: { $0.id == sectionID })?.text == middle
+        }) ?? insertedSectionIDs.first {
+            activeSectionID = newActiveSectionID
+        } else {
+            activeSectionID = sections.first?.id
         }
     }
 
