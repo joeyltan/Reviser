@@ -4,6 +4,16 @@ import UIKit
 import UniformTypeIdentifiers
 import ZIPFoundation
 
+struct TextStyleRange: Codable, Equatable {
+    var location: Int
+    var length: Int
+    var style: String
+
+    var nsRange: NSRange {
+        NSRange(location: location, length: length)
+    }
+}
+
 struct ProjectDetailView: View {
     struct ProjectEditSnapshot: Equatable {
         var sections: [Section]
@@ -331,8 +341,44 @@ struct ProjectDetailView: View {
                     } label: {
                         Label("Strikethrough", systemImage: "strikethrough")
                     }
+
+                    Divider()
+
+                    Menu("Text Color") {
+                        Button { applyTextColor(.red) } label: {
+                            colorPaletteRow(title: "Red", color: .systemRed)
+                        }
+                        Button { applyTextColor(.blue) } label: {
+                            colorPaletteRow(title: "Blue", color: .systemBlue)
+                        }
+                        Button { applyTextColor(.green) } label: {
+                            colorPaletteRow(title: "Green", color: .systemGreen)
+                        }
+                        Button { applyTextColor(.purple) } label: {
+                            colorPaletteRow(title: "Purple", color: .systemPurple)
+                        }
+                    }
+
+                    Menu("Highlight") {
+                        Button { applyTextHighlight(.yellow) } label: {
+                            colorPaletteRow(title: "Yellow", color: .systemYellow)
+                        }
+                        Button { applyTextHighlight(.orange) } label: {
+                            colorPaletteRow(title: "Orange", color: .systemOrange)
+                        }
+                        Button { applyTextHighlight(.green) } label: {
+                            colorPaletteRow(title: "Green", color: .systemGreen)
+                        }
+                        Button { applyTextHighlight(.pink) } label: {
+                            colorPaletteRow(title: "Pink", color: .systemPink)
+                        }
+                        Button { applyTextHighlight(.blue) } label: {
+                            colorPaletteRow(title: "Blue", color: .systemBlue)
+                        }
+                    }
+
                 } label: {
-                    Image(systemName: "wand.and.sparkles")
+                    Image(systemName: "textformat.alt")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 28, height: 28)
@@ -552,6 +598,23 @@ struct ProjectDetailView: View {
             } label: {
                 Label("Strikethrough", systemImage: "strikethrough")
             }
+
+            Divider()
+
+            Menu("Text Color") {
+                Button("Red") { applyTextColor(.red) }
+                Button("Blue") { applyTextColor(.blue) }
+                Button("Green") { applyTextColor(.green) }
+                Button("Purple") { applyTextColor(.purple) }
+            }
+
+            Menu("Highlight") {
+                Button("Yellow") { applyTextHighlight(.yellow) }
+                Button("Orange") { applyTextHighlight(.orange) }
+                Button("Green") { applyTextHighlight(.green) }
+                Button("Pink") { applyTextHighlight(.pink) }
+                Button("Blue") { applyTextHighlight(.blue) }
+            }
         } label: {
             Label("Text Styling", systemImage: "wand.and.sparkles")
         }
@@ -724,7 +787,20 @@ struct ProjectDetailView: View {
             },
             UIAction(title: "Strikethrough", image: UIImage(systemName: "strikethrough")) { _ in
                 applyStyle(.strikethrough)
-            }
+            },
+            UIMenu(title: "Text Color", children: [
+                UIAction(title: "Red", image: swatchImage(.systemRed)) { _ in applyTextColor(.red) },
+                UIAction(title: "Blue", image: swatchImage(.systemBlue)) { _ in applyTextColor(.blue) },
+                UIAction(title: "Green", image: swatchImage(.systemGreen)) { _ in applyTextColor(.green) },
+                UIAction(title: "Purple", image: swatchImage(.systemPurple)) { _ in applyTextColor(.purple) }
+            ]),
+            UIMenu(title: "Highlight", children: [
+                UIAction(title: "Yellow", image: swatchImage(.systemYellow)) { _ in applyTextHighlight(.yellow) },
+                UIAction(title: "Orange", image: swatchImage(.systemOrange)) { _ in applyTextHighlight(.orange) },
+                UIAction(title: "Green", image: swatchImage(.systemGreen)) { _ in applyTextHighlight(.green) },
+                UIAction(title: "Pink", image: swatchImage(.systemPink)) { _ in applyTextHighlight(.pink) },
+                UIAction(title: "Blue", image: swatchImage(.systemBlue)) { _ in applyTextHighlight(.blue) }
+            ])
         ])
 
         let filterActions = availableFilterTags.map { tag in
@@ -1262,6 +1338,8 @@ struct ProjectDetailView: View {
         TextKitView(
             text: binding(for: section),
             highlightedSnippets: textTaggedSnippets,
+            textColors: section.colors,
+            textHighlights: section.highlights,
             splitMode: splitMode,
             snappedY: $snappedY,
             onSplit: { y in
@@ -1439,6 +1517,8 @@ struct ProjectDetailView: View {
                 TextKitView(
                     text: binding(for: section),
                     highlightedSnippets: textTaggedSnippets,
+                    textColors: section.colors,
+                    textHighlights: section.highlights,
                     splitMode: splitMode,
                     snappedY: $snappedY,
                     onSplit: { y in
@@ -2131,7 +2211,102 @@ struct ProjectDetailView: View {
         }
     }
 
+    enum TextColorStyle: String {
+        case red
+        case blue
+        case green
+        case purple
+
+        var uiColor: UIColor {
+            switch self {
+            case .red: return .systemRed
+            case .blue: return .systemBlue
+            case .green: return .systemGreen
+            case .purple: return .systemPurple
+            }
+        }
+    }
+
+    enum TextHighlightStyle: String {
+        case yellow
+        case orange
+        case green
+        case pink
+        case blue
+
+        var uiColor: UIColor {
+            switch self {
+            case .yellow: return .systemYellow.withAlphaComponent(0.45)
+            case .orange: return .systemOrange.withAlphaComponent(0.35)
+            case .green: return .systemGreen.withAlphaComponent(0.30)
+            case .pink: return .systemPink.withAlphaComponent(0.30)
+            case .blue: return .systemBlue.withAlphaComponent(0.25)
+            }
+        }
+    }
+
     func applyStyle(_ style: TextStyle) {
+        let markers = style.markers
+        applyWrappedSelection(prefix: markers.prefix, suffix: markers.suffix)
+    }
+
+    func applyTextColor(_ color: TextColorStyle) {
+        guard let activeSectionID = activeSectionID,
+              let textView = textViews[activeSectionID],
+              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+
+        let selectedRange = textView.selectedRange
+        guard selectedRange.length > 0 else { return }
+
+        let nsText = sections[index].text as NSString
+        guard selectedRange.location + selectedRange.length <= nsText.length else { return }
+
+        toggleTextStyleRange(selectedRange, in: &sections[index].colors, style: color.rawValue)
+    }
+
+    func applyTextHighlight(_ highlight: TextHighlightStyle) {
+        guard let activeSectionID = activeSectionID,
+              let textView = textViews[activeSectionID],
+              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+
+        let selectedRange = textView.selectedRange
+        guard selectedRange.length > 0 else { return }
+
+        let nsText = sections[index].text as NSString
+        guard selectedRange.location + selectedRange.length <= nsText.length else { return }
+
+        toggleTextStyleRange(selectedRange, in: &sections[index].highlights, style: highlight.rawValue)
+    }
+
+    @ViewBuilder
+    private func colorPaletteRow(title: String, color: UIColor) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color(uiColor: color))
+                .frame(width: 12, height: 12)
+
+            Text(title)
+        }
+    }
+
+    private func swatchImage(_ color: UIColor) -> UIImage? {
+        let configuration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        return UIImage(systemName: "circle.fill", withConfiguration: configuration)?.withTintColor(color, renderingMode: .alwaysOriginal)
+    }
+
+    private func toggleTextStyleRange(_ selectedRange: NSRange, in ranges: inout [TextStyleRange], style: String) {
+        if let existingIndex = ranges.firstIndex(where: { $0.location == selectedRange.location && $0.length == selectedRange.length }) {
+            if ranges[existingIndex].style == style {
+                ranges.remove(at: existingIndex)
+            } else {
+                ranges[existingIndex].style = style
+            }
+        } else {
+            ranges.append(TextStyleRange(location: selectedRange.location, length: selectedRange.length, style: style))
+        }
+    }
+
+    private func applyWrappedSelection(prefix: String, suffix: String) {
         guard let activeSectionID = activeSectionID,
               let textView = textViews[activeSectionID],
               let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
@@ -2144,8 +2319,7 @@ struct ProjectDetailView: View {
             return
         }
 
-        let markers = style.markers
-        let styledText = markers.prefix + selectedText + markers.suffix
+        let styledText = prefix + selectedText + suffix
 
         // Replace selected text with styled version
         sections[index].text = (text as NSString).replacingCharacters(in: selectedRange, with: styledText)
@@ -2472,6 +2646,8 @@ struct SectionWindowCard: View {
 struct TextKitView: UIViewRepresentable {
     @Binding var text: String
     var highlightedSnippets: Set<String> = []
+    var textColors: [TextStyleRange] = []
+    var textHighlights: [TextStyleRange] = []
     var splitMode: Bool
     @Binding var snappedY: CGFloat
     var onSplit: (CGFloat) -> Void
@@ -2542,6 +2718,9 @@ struct TextKitView: UIViewRepresentable {
             .foregroundColor: UIColor.label
         ], range: fullRange)
 
+        applyColorStyles(to: attributed, text: text, colors: textColors)
+        applyHighlightStyles(to: attributed, text: text, highlights: textHighlights)
+
         for snippet in highlightedSnippets where !snippet.isEmpty {
             let nsText = text as NSString
             var searchRange = NSRange(location: 0, length: nsText.length)
@@ -2563,6 +2742,28 @@ struct TextKitView: UIViewRepresentable {
         }
 
         return attributed
+    }
+
+    private func applyHighlightStyles(to attributed: NSMutableAttributedString, text: String, highlights: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in highlights {
+            guard let style = ProjectDetailView.TextHighlightStyle(rawValue: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.backgroundColor, value: style.uiColor, range: nsRange)
+        }
+    }
+
+    private func applyColorStyles(to attributed: NSMutableAttributedString, text: String, colors: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in colors {
+            guard let style = ProjectDetailView.TextColorStyle(rawValue: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.foregroundColor, value: style.uiColor, range: nsRange)
+        }
     }
 
     private func computeSnippetAnchorPoints(in textView: UITextView) -> [String: [CGPoint]] {
@@ -2627,12 +2828,16 @@ struct Section: Identifiable, Codable, Equatable {
     var text: String
     var notes: [String] = []
     var resolvedNotes: [String] = []
+    var colors: [TextStyleRange] = []
+    var highlights: [TextStyleRange] = []
 
-    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = []) {
+    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = [], colors: [TextStyleRange] = [], highlights: [TextStyleRange] = []) {
         self.id = id
         self.text = text
         self.notes = notes
         self.resolvedNotes = resolvedNotes
+        self.colors = colors
+        self.highlights = highlights
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2640,6 +2845,8 @@ struct Section: Identifiable, Codable, Equatable {
         case text
         case notes
         case resolvedNotes
+        case colors
+        case highlights
     }
 
     init(from decoder: Decoder) throws {
@@ -2648,6 +2855,8 @@ struct Section: Identifiable, Codable, Equatable {
         text = try container.decode(String.self, forKey: .text)
         notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
         resolvedNotes = try container.decodeIfPresent([String].self, forKey: .resolvedNotes) ?? []
+        colors = try container.decodeIfPresent([TextStyleRange].self, forKey: .colors) ?? []
+        highlights = try container.decodeIfPresent([TextStyleRange].self, forKey: .highlights) ?? []
     }
 }
 
