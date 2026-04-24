@@ -930,14 +930,22 @@ struct ProjectDetailView: View {
 
     @ViewBuilder
     private func mainContentView(project: AppModel.Project) -> some View {
+        let displayedSections = displayedSectionsForCurrentFilters()
+
         ZStack(alignment: .topLeading) {
             if shouldShowFilteredTimeline {
                 linkedTimelineView()
                     .padding(40)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        ForEach(displayedSectionsForCurrentFilters(), id: \.id) { section in
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(displayedSections.enumerated()), id: \.element.id) { index, section in
+                            if index > 0 {
+                                Divider()
+                                    .overlay(Color.secondary.opacity(0.18))
+                                    .padding(.vertical, 18)
+                            }
+
                             sectionView(section: section, index: originalSectionIndex(for: section.id))
                         }
                     }
