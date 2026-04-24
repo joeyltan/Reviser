@@ -142,6 +142,7 @@ struct CompareDraftsView: View {
     @State private var rightProjectID: UUID?
     @State private var leftMode: DraftComparisonMode = .sectioned
     @State private var rightMode: DraftComparisonMode = .unsectioned
+    @State private var showDraftDiff: Bool = true
 
     var body: some View {
         NavigationStack {
@@ -171,6 +172,8 @@ struct CompareDraftsView: View {
                                     projectID: rightProjectID,
                                     mode: $rightMode,
                                     width: sideWidth,
+                                    comparedAgainstProjectID: leftProjectID,
+                                    comparedAgainstMode: leftMode,
                                     onChooseProject: { rightProjectID = $0 }
                                 )
                             }
@@ -182,6 +185,16 @@ struct CompareDraftsView: View {
             }
             .navigationTitle("Compare Drafts")
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showDraftDiff.toggle()
+                    } label: {
+                        Label(showDraftDiff ? "Hide Diff" : "Show Diff", systemImage: showDraftDiff ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.bordered)
+                    .help(showDraftDiff ? "Hide draft differences" : "Show draft differences")
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         dismiss()
@@ -215,6 +228,8 @@ struct CompareDraftsView: View {
         projectID: UUID?,
         mode: Binding<DraftComparisonMode>,
         width: CGFloat,
+        comparedAgainstProjectID: UUID? = nil,
+        comparedAgainstMode: DraftComparisonMode? = nil,
         onChooseProject: @escaping (UUID) -> Void
     ) -> some View {
         let selectedProject = projectID.flatMap { id in
@@ -222,6 +237,12 @@ struct CompareDraftsView: View {
         }
 
         let selectedText = comparisonText(for: selectedProject, mode: mode.wrappedValue)
+        let comparedAgainstProject = comparedAgainstProjectID.flatMap { id in
+            model.projects.first(where: { $0.id == id })
+        }
+        let comparedAgainstText = comparedAgainstProject.map { baselineProject in
+            comparisonText(for: baselineProject, mode: comparedAgainstMode ?? mode.wrappedValue)
+        }
 
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -267,15 +288,25 @@ struct CompareDraftsView: View {
             }
 
             ScrollView {
-                Text(selectedText)
-                    .font(.system(size: 22))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(.thinMaterial)
-                    )
+                Group {
+                    if let selectedProject {
+                        if showDraftDiff, let comparedAgainstText, comparedAgainstProjectID != nil {
+                            Text(diffAttributedText(from: comparedAgainstText, to: selectedText))
+                        } else {
+                            Text(verbatim: selectedText)
+                        }
+                    } else {
+                        Text(verbatim: selectedText)
+                    }
+                }
+                .font(.system(size: 22))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(.thinMaterial)
+                )
             }
             .frame(width: width)
             .frame(minHeight: 500)
@@ -303,8 +334,194 @@ struct CompareDraftsView: View {
                 .joined(separator: "")
         }
 
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "(Empty project)" : trimmed
+        return text.isEmpty ? "(Empty project)" : text
+    }
+
+    private enum DraftDiffOperation {
+        case equal(String)
+        case insert(String)
+        case delete(String)
+    }
+
+    private func diffAttributedText(from baseText: String, to targetText: String) -> AttributedString {
+        let operations = diffOperations(from: diffTokens(in: baseText), to: diffTokens(in: targetText))
+        let result = NSMutableAttributedString()
+
+        for operation in operations {
+            switch operation {
+            case .equal(let token):
+                appendDiffToken(token, to: result)
+            case .insert(let token):
+                appendDiffToken(
+                    token,
+                    to: result,
+                    foregroundColor: UIColor.systemGreen,
+                    backgroundColor: UIColor.systemGreen.withAlphaComponent(0.24)
+                )
+            case .delete(let token):
+                appendDiffToken(
+                    token,
+                    to: result,
+                    foregroundColor: UIColor.systemRed,
+                    backgroundColor: UIColor.systemRed.withAlphaComponent(0.18),
+                    strikethrough: true
+                )
+            }
+        }
+
+        return AttributedString(result)
+    }
+
+    private func appendDiffToken(
+        _ token: String,
+        to attributedString: NSMutableAttributedString,
+        foregroundColor: UIColor? = nil,
+        backgroundColor: UIColor? = nil,
+        strikethrough: Bool = false
+    ) {
+        guard !token.isEmpty else { return }
+
+        var attributes: [NSAttributedString.Key: Any] = [:]
+        if let foregroundColor {
+            attributes[.foregroundColor] = foregroundColor
+        }
+        if let backgroundColor {
+            attributes[.backgroundColor] = backgroundColor
+        }
+        if strikethrough {
+            attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        }
+
+        attributedString.append(NSAttributedString(string: token, attributes: attributes))
+    }
+
+    private func diffTokens(in text: String) -> [String] {
+        guard let firstCharacter = text.first else { return [] }
+
+        var tokens: [String] = []
+        var tokenStart = text.startIndex
+        var tokenIsWhitespace = firstCharacter.isWhitespace
+        var index = text.index(after: tokenStart)
+
+        while index < text.endIndex {
+            let isWhitespace = text[index].isWhitespace
+            if isWhitespace != tokenIsWhitespace {
+                tokens.append(String(text[tokenStart..<index]))
+                tokenStart = index
+                tokenIsWhitespace = isWhitespace
+            }
+            index = text.index(after: index)
+        }
+
+        tokens.append(String(text[tokenStart..<text.endIndex]))
+        return tokens
+    }
+
+    private func diffOperations(from baseTokens: [String], to targetTokens: [String]) -> [DraftDiffOperation] {
+        var operations: [DraftDiffOperation] = []
+
+        func recurse(_ baseStart: Int, _ baseEnd: Int, _ targetStart: Int, _ targetEnd: Int) {
+            var baseStartIndex = baseStart
+            var targetStartIndex = targetStart
+            var baseEndIndex = baseEnd
+            var targetEndIndex = targetEnd
+
+            while baseStartIndex < baseEndIndex,
+                  targetStartIndex < targetEndIndex,
+                  baseTokens[baseStartIndex] == targetTokens[targetStartIndex] {
+                operations.append(.equal(baseTokens[baseStartIndex]))
+                baseStartIndex += 1
+                targetStartIndex += 1
+            }
+
+            while baseStartIndex < baseEndIndex,
+                  targetStartIndex < targetEndIndex,
+                  baseTokens[baseEndIndex - 1] == targetTokens[targetEndIndex - 1] {
+                baseEndIndex -= 1
+                targetEndIndex -= 1
+            }
+
+            if baseStartIndex >= baseEndIndex {
+                for index in targetStartIndex..<targetEndIndex {
+                    operations.append(.insert(targetTokens[index]))
+                }
+
+                for index in baseEndIndex..<baseEnd {
+                    operations.append(.equal(baseTokens[index]))
+                }
+                return
+            }
+
+            if targetStartIndex >= targetEndIndex {
+                for index in baseStartIndex..<baseEndIndex {
+                    operations.append(.delete(baseTokens[index]))
+                }
+
+                for index in baseEndIndex..<baseEnd {
+                    operations.append(.equal(baseTokens[index]))
+                }
+                return
+            }
+
+            let baseMiddle = baseStartIndex..<baseEndIndex
+            let targetMiddle = targetStartIndex..<targetEndIndex
+
+            if let anchor = uniqueCommonAnchor(in: baseMiddle, and: targetMiddle, baseTokens: baseTokens, targetTokens: targetTokens) {
+                recurse(baseStartIndex, anchor.baseIndex, targetStartIndex, anchor.targetIndex)
+                operations.append(.equal(baseTokens[anchor.baseIndex]))
+                recurse(anchor.baseIndex + 1, baseEndIndex, anchor.targetIndex + 1, targetEndIndex)
+
+                for index in baseEndIndex..<baseEnd {
+                    operations.append(.equal(baseTokens[index]))
+                }
+                return
+            }
+
+            for index in baseStartIndex..<baseEndIndex {
+                operations.append(.delete(baseTokens[index]))
+            }
+
+            for index in targetStartIndex..<targetEndIndex {
+                operations.append(.insert(targetTokens[index]))
+            }
+
+            for index in baseEndIndex..<baseEnd {
+                operations.append(.equal(baseTokens[index]))
+            }
+        }
+
+        recurse(0, baseTokens.count, 0, targetTokens.count)
+        return operations
+    }
+
+    private func uniqueCommonAnchor(
+        in baseRange: Range<Int>,
+        and targetRange: Range<Int>,
+        baseTokens: [String],
+        targetTokens: [String]
+    ) -> (baseIndex: Int, targetIndex: Int)? {
+        var baseCounts: [String: Int] = [:]
+        var targetCounts: [String: Int] = [:]
+
+        for index in baseRange {
+            baseCounts[baseTokens[index], default: 0] += 1
+        }
+
+        for index in targetRange {
+            targetCounts[targetTokens[index], default: 0] += 1
+        }
+
+        for baseIndex in baseRange {
+            let token = baseTokens[baseIndex]
+            guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            guard baseCounts[token] == 1, targetCounts[token] == 1 else { continue }
+
+            if let targetIndex = targetRange.firstIndex(where: { targetTokens[$0] == token }) {
+                return (baseIndex, targetIndex)
+            }
+        }
+
+        return nil
     }
 }
 
