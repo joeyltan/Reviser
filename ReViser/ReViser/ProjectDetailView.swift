@@ -537,6 +537,21 @@ struct ProjectDetailView: View {
                 } message: {
                     Text("Enter a name for the new tag category")
                 }
+                
+                Menu {
+                    Button {
+                        sectionWholeDocumentByParagraphs()
+                    } label: {
+                        Label("Section Document by Paragraphs", systemImage: "text.line.first.and.arrowtriangle.forward")
+                    }
+                } label: {
+                    Image(systemName: "apple.writing.tools")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 26, height: 26)
+                        .foregroundColor(.gray)
+                }
+                .help("Extra tools")
 
                 Spacer()
             }
@@ -2030,14 +2045,11 @@ struct ProjectDetailView: View {
 
         let text = sections[index].text
         let nsText = text as NSString
-        let selectedRange = textView.selectedRange
-        let clampedLocation = min(max(selectedRange.location, 0), nsText.length)
-        let clampedLength = min(max(selectedRange.length, 0), nsText.length - clampedLocation)
-        let clampedRange = NSRange(location: clampedLocation, length: clampedLength)
+        let selectedRange = clampSelectionRange(textView.selectedRange, textLength: nsText.length)
 
-        let first = nsText.substring(to: clampedRange.location)
-        let middle = clampedRange.length > 0 ? nsText.substring(with: clampedRange) : ""
-        let second = nsText.substring(from: clampedRange.location + clampedRange.length)
+        let first = nsText.substring(to: selectedRange.location)
+        let middle = selectedRange.length > 0 ? nsText.substring(with: selectedRange) : ""
+        let second = nsText.substring(from: selectedRange.location + selectedRange.length)
 
         sections.remove(at: index)
 
@@ -2077,6 +2089,112 @@ struct ProjectDetailView: View {
         } else {
             activeSectionID = sections.first?.id
         }
+    }
+
+    private func clampSelectionRange(_ range: NSRange, textLength: Int) -> NSRange {
+        let clampedLocation = min(max(range.location, 0), textLength)
+        let clampedLength = min(max(range.length, 0), textLength - clampedLocation)
+        return NSRange(location: clampedLocation, length: clampedLength)
+    }
+
+    func sectionWholeDocumentByParagraphs() {
+        guard !sections.isEmpty else { return }
+
+        let currentSections = sections
+        var rebuiltSections: [Section] = []
+
+        for section in currentSections {
+            let paragraphTexts = paragraphs(in: section.text)
+
+            if paragraphTexts.isEmpty {
+                rebuiltSections.append(Section(id: UUID(), text: ""))
+                continue
+            }
+
+            for (paragraphIndex, paragraphText) in paragraphTexts.enumerated() {
+                let isPrimaryParagraph = paragraphIndex == 0
+                rebuiltSections.append(
+                    Section(
+                        id: UUID(),
+                        text: paragraphText,
+                        notes: isPrimaryParagraph ? section.notes : [],
+                        resolvedNotes: isPrimaryParagraph ? section.resolvedNotes : [],
+                        colors: isPrimaryParagraph ? section.colors : [],
+                        highlights: isPrimaryParagraph ? section.highlights : [],
+                        fontTypes: isPrimaryParagraph ? section.fontTypes : [],
+                        fontSizes: isPrimaryParagraph ? section.fontSizes : []
+                    )
+                )
+            }
+        }
+
+        sections = rebuiltSections.isEmpty ? [Section(id: UUID(), text: "")] : rebuiltSections
+
+        if let firstSectionID = sections.first?.id {
+            activeSectionID = firstSectionID
+        }
+
+        textViews.removeAll()
+        sectionHeights.removeAll()
+        caretIndexBySection.removeAll()
+        selectedLengthBySection.removeAll()
+        visibleActionSectionIDs.removeAll()
+        visibleNoteSectionIDs.removeAll()
+        visibleNoteOptionsSectionIDs.removeAll()
+        visibleResolvedNoteSectionIDs.removeAll()
+        revealedResolveNoteKey = nil
+        noteDraftBySection.removeAll()
+        editingNoteKeys.removeAll()
+        sectionTags.removeAll()
+        taggedTextBySection.removeAll()
+        showFilteredTimeline = false
+        linkedTimelineFrames.removeAll()
+        linkedTimelineTextViewFrames.removeAll()
+        linkedTimelineSnippetPoints.removeAll()
+    }
+
+    private func paragraphs(in text: String) -> [String] {
+        let nsText = text as NSString
+        var paragraphs: [String] = []
+        var currentParagraph = ""
+        var separatorRun = ""
+        var hasParagraphContent = false
+        var index = 0
+
+        while index < nsText.length {
+            let lineRange = nsText.lineRange(for: NSRange(location: index, length: 0))
+            let lineText = nsText.substring(with: lineRange)
+
+            if lineText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if hasParagraphContent {
+                    separatorRun += lineText
+                } else {
+                    separatorRun += lineText
+                }
+            } else {
+                if !hasParagraphContent {
+                    currentParagraph = separatorRun + lineText
+                    separatorRun = ""
+                    hasParagraphContent = true
+                } else if !separatorRun.isEmpty {
+                    paragraphs.append(currentParagraph + separatorRun)
+                    currentParagraph = lineText
+                    separatorRun = ""
+                } else {
+                    currentParagraph += lineText
+                }
+            }
+
+            index = lineRange.location + lineRange.length
+        }
+
+        if hasParagraphContent {
+            paragraphs.append(currentParagraph + separatorRun)
+        } else if !separatorRun.isEmpty {
+            paragraphs.append(separatorRun)
+        }
+
+        return paragraphs
     }
 
     func undoLastProjectChange() {
