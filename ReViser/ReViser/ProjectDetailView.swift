@@ -74,13 +74,25 @@ struct ProjectDetailView: View {
 
     var body: some View {
         if let project = model.projects.first(where: { $0.id == projectID }) {
-            HStack(spacing: 0) {
-                toolbarView
-                toggleButton
-                if showingRestitchedManuscript {
-                    restitchedManuscriptView(project: project)
-                } else {
-                    mainContentView(project: project)
+            ZStack {
+                HStack(spacing: 0) {
+                    toolbarView
+                    toggleButton
+                    if showingRestitchedManuscript {
+                        restitchedManuscriptView(project: project)
+                    } else {
+                        mainContentView(project: project)
+                    }
+                }
+
+                if showingCustomFontSizeSheet {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            closeCustomFontSizePopup()
+                        }
+
+                    customFontSizeCenteredPopup
                 }
             }
             .confirmationDialog(
@@ -122,9 +134,6 @@ struct ProjectDetailView: View {
                         }
                     }
                 }
-            }
-            .sheet(isPresented: $showingCustomFontSizeSheet) {
-                customFontSizeSheet
             }
             .onAppear {
                 projectUndoStack.removeAll()
@@ -843,6 +852,18 @@ struct ProjectDetailView: View {
                 UIAction(title: "Green", image: swatchImage(.systemGreen)) { _ in applyTextHighlight(.green) },
                 UIAction(title: "Pink", image: swatchImage(.systemPink)) { _ in applyTextHighlight(.pink) },
                 UIAction(title: "Blue", image: swatchImage(.systemBlue)) { _ in applyTextHighlight(.blue) }
+            ]),
+            UIMenu(title: "Font Size", children: [
+                UIAction(title: "Custom Size…", image: UIImage(systemName: "number")) { _ in
+                    customFontSizeValue = 25
+                    showingCustomFontSizeSheet = true
+                }
+            ]),
+            UIMenu(title: "Font Type", children: [
+                UIAction(title: "System", image: UIImage(systemName: "textformat")) { _ in applyTextFontType(.system) },
+                UIAction(title: "Serif", image: UIImage(systemName: "textformat.alt")) { _ in applyTextFontType(.serif) },
+                UIAction(title: "Rounded", image: UIImage(systemName: "capsule")) { _ in applyTextFontType(.rounded) },
+                UIAction(title: "Monospaced", image: UIImage(systemName: "rectangle.grid.1x2")) { _ in applyTextFontType(.monospaced) }
             ])
         ])
 
@@ -2442,56 +2463,35 @@ struct ProjectDetailView: View {
     }
 
     @ViewBuilder
-    private var customFontSizeSheet: some View {
-        NavigationStack {
-            Form {
-                SwiftUI.Section("Font Size") {
-                    HStack(spacing: 12) {
-                        Button {
-                            adjustCustomFontSize(by: -1)
-                        } label: {
-                            Image(systemName: "minus")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(customFontSizeValue <= 8)
-
-                        TextField("Size", value: $customFontSizeValue, format: .number.precision(.fractionLength(0)))
-                            .multilineTextAlignment(.center)
-                            .keyboardType(.numberPad)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 100)
-
-                        Button {
-                            adjustCustomFontSize(by: 1)
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(customFontSizeValue >= 96)
-                    }
-
-                    Text("\(Int(customFontSizeValue.rounded())) pt")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+    private var customFontSizeCenteredPopup: some View {
+        HStack(spacing: 8) {
+            Button {
+                adjustCustomFontSize(by: -1)
+            } label: {
+                Image(systemName: "minus")
             }
-            .navigationTitle("Custom Font Size")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        showingCustomFontSizeSheet = false
-                    }
-                }
+            .buttonStyle(.bordered)
+            .disabled(customFontSizeValue <= 8)
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Apply") {
-                        applyTextFontSize(customFontSizeValue)
-                        showingCustomFontSizeSheet = false
-                    }
-                }
+            TextField("", value: $customFontSizeValue, format: .number.precision(.fractionLength(0)))
+                .multilineTextAlignment(.center)
+                .keyboardType(.numberPad)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 64)
+
+            Button {
+                adjustCustomFontSize(by: 1)
+            } label: {
+                Image(systemName: "plus")
             }
+            .buttonStyle(.bordered)
+            .disabled(customFontSizeValue >= 96)
         }
-        .frame(minWidth: 320, minHeight: 240)
+        .padding(10)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private func swatchImage(_ color: UIColor) -> UIImage? {
@@ -2501,6 +2501,11 @@ struct ProjectDetailView: View {
 
     private func adjustCustomFontSize(by delta: Double) {
         customFontSizeValue = min(max(customFontSizeValue + delta, 8), 96)
+    }
+
+    private func closeCustomFontSizePopup() {
+        applyTextFontSize(customFontSizeValue)
+        showingCustomFontSizeSheet = false
     }
 
     private func toggleTextStyleRange(_ selectedRange: NSRange, in ranges: inout [TextStyleRange], style: String) {
