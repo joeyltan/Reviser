@@ -682,6 +682,16 @@ struct ProjectDetailView: View {
                     } label: {
                         Label("Section Document by Paragraphs", systemImage: "text.line.first.and.arrowtriangle.forward")
                     }
+                    
+                    Divider()
+
+                    Button {
+                        rejoinWithNextSection()
+                    } label: {
+                        Label("Rejoin With Next Section", systemImage: "text.line.last.and.arrowtriangle.backward")
+                    }
+                    .disabled(activeSectionID == nil || (activeSectionID != nil && (sections.firstIndex(where: { $0.id == activeSectionID! }) ?? (sections.count - 1)) >= sections.count - 1))
+                    
                 } label: {
                     Image(systemName: "apple.writing.tools")
                         .resizable()
@@ -1102,7 +1112,9 @@ struct ProjectDetailView: View {
                             sectionView(section: section, index: originalSectionIndex(for: section.id))
                         }
                     }
-                    .padding(40)
+                    .padding(.leading, 16)
+                    .padding(.trailing, 28)
+                    .padding(.vertical, 40)
                 }
             }
             
@@ -1114,6 +1126,11 @@ struct ProjectDetailView: View {
                 .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
                 .foregroundColor(.gray)
                 .allowsHitTesting(false)
+            }
+        }
+        .onChange(of: draggedSectionID) { _, newValue in
+            if newValue == nil {
+                revealedReorderHandleSectionID = nil
             }
         }
     }
@@ -1810,6 +1827,12 @@ struct ProjectDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .simultaneousGesture(TapGesture().onEnded {
+                if revealedReorderHandleSectionID == section.id {
+                    revealedReorderHandleSectionID = nil
+                }
+            })
 
             VStack(alignment: .center, spacing: 8) {
                 Text("\(index + 1)")
@@ -2377,6 +2400,92 @@ struct ProjectDetailView: View {
         linkedTimelineFrames.removeAll()
         linkedTimelineTextViewFrames.removeAll()
         linkedTimelineSnippetPoints.removeAll()
+    }
+    
+    private func offsetRanges(_ ranges: [TextStyleRange], by delta: Int) -> [TextStyleRange] {
+        guard delta != 0 else { return ranges }
+        return ranges.map { TextStyleRange(location: $0.location + delta, length: $0.length, style: $0.style) }
+    }
+
+    func rejoinWithNextSection() {
+        guard let currentID = activeSectionID,
+              let currentIndex = sections.firstIndex(where: { $0.id == currentID }),
+              currentIndex + 1 < sections.count else { return }
+
+        // Capture undo before mutation
+        pushUndoSnapshot(currentSnapshot())
+
+        var current = sections[currentIndex]
+        let next = sections[currentIndex + 1]
+
+        // Prepare text merge
+        let currentText = current.text
+        let needsSeparator = !(currentText.hasSuffix("\n") || next.text.hasPrefix("\n")) && !currentText.isEmpty && !next.text.isEmpty
+        let separator = needsSeparator ? "\n" : ""
+        let joinOffset = (currentText as NSString).length + (separator as NSString).length
+
+        // Merge text
+        current.text = current.text + separator + next.text
+
+        // Merge notes and resolved notes
+        current.notes.append(contentsOf: next.notes)
+        current.resolvedNotes.append(contentsOf: next.resolvedNotes)
+
+        // Merge styled ranges (offset next ranges by joinOffset)
+        current.colors.append(contentsOf: offsetRanges(next.colors, by: joinOffset))
+        current.highlights.append(contentsOf: offsetRanges(next.highlights, by: joinOffset))
+        current.fontTypes.append(contentsOf: offsetRanges(next.fontTypes, by: joinOffset))
+        current.fontSizes.append(contentsOf: offsetRanges(next.fontSizes, by: joinOffset))
+
+        // Apply merged current back into sections and remove next
+        sections[currentIndex] = current
+        let removedID = sections[currentIndex + 1].id
+        sections.remove(at: currentIndex + 1)
+
+        // Merge section-level tags
+        if let nextSectionTags = sectionTags[removedID] {
+            if sectionTags[currentID] == nil { sectionTags[currentID] = [] }
+            sectionTags[currentID]?.formUnion(nextSectionTags)
+            sectionTags[removedID] = nil
+        }
+
+        // Merge text-level tags (tagged snippets)
+        if let nextSnippets = taggedTextBySection[removedID] {
+            if taggedTextBySection[currentID] == nil { taggedTextBySection[currentID] = [:] }
+            for (snippet, tags) in nextSnippets {
+                if var existing = taggedTextBySection[currentID]?[snippet] {
+                    existing.formUnion(tags)
+                    taggedTextBySection[currentID]?[snippet] = existing
+                } else {
+                    taggedTextBySection[currentID]?[snippet] = tags
+                }
+            }
+            taggedTextBySection[removedID] = nil
+        }
+
+        // Cleanup view/state caches for removed section
+        textViews[removedID] = nil
+        sectionHeights[removedID] = nil
+        caretIndexBySection[removedID] = nil
+        selectedLengthBySection[removedID] = nil
+        visibleActionSectionIDs.remove(removedID)
+        visibleNoteOptionsSectionIDs.remove(removedID)
+        visibleNoteSectionIDs.remove(removedID)
+        visibleResolvedNoteSectionIDs.remove(removedID)
+        noteDraftBySection[removedID] = nil
+
+        // Linked timeline caches
+        linkedTimelineFrames[removedID] = nil
+        linkedTimelineTextViewFrames[removedID] = nil
+        linkedTimelineSnippetPoints[removedID] = nil
+
+        // If a resolve key was showing for the removed section, clear it
+        if let key = revealedResolveNoteKey, key.hasPrefix("\(removedID.uuidString)-") {
+            revealedResolveNoteKey = nil
+        }
+
+        // Keep focus on the merged section
+        activeSectionID = currentID
     }
 
     private func paragraphs(in text: String) -> [String] {
