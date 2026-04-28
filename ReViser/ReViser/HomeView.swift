@@ -344,13 +344,32 @@ struct CompareDraftsView: View {
     }
 
     private func diffAttributedText(from baseText: String, to targetText: String) -> AttributedString {
-        let operations = diffOperations(from: diffTokens(in: baseText), to: diffTokens(in: targetText))
+        let baseSentences = sentenceChunks(in: baseText)
+        let targetSentences = sentenceChunks(in: targetText)
+        let operations = diffOperations(from: baseSentences, to: targetSentences)
         let result = NSMutableAttributedString()
+        var index = 0
 
-        for operation in operations {
-            switch operation {
+        while index < operations.count {
+            switch operations[index] {
             case .equal(let token):
                 appendDiffToken(token, to: result)
+                index += 1
+            case .delete(let baseChunk):
+                if index + 1 < operations.count,
+                   case .insert(let targetChunk) = operations[index + 1] {
+                    appendWordLevelDiff(from: baseChunk, to: targetChunk, into: result)
+                    index += 2
+                } else {
+                    appendDiffToken(
+                        baseChunk,
+                        to: result,
+                        foregroundColor: UIColor.systemRed,
+                        backgroundColor: UIColor.systemRed.withAlphaComponent(0.18),
+                        strikethrough: true
+                    )
+                    index += 1
+                }
             case .insert(let token):
                 appendDiffToken(
                     token,
@@ -358,18 +377,61 @@ struct CompareDraftsView: View {
                     foregroundColor: UIColor.systemGreen,
                     backgroundColor: UIColor.systemGreen.withAlphaComponent(0.24)
                 )
+                index += 1
+            }
+        }
+
+        return AttributedString(result)
+    }
+
+    private func appendWordLevelDiff(from baseText: String, to targetText: String, into attributedString: NSMutableAttributedString) {
+        let baseTokens = wordTokens(in: baseText)
+        let targetTokens = wordTokens(in: targetText)
+        let operations = diffOperations(from: baseTokens, to: targetTokens)
+
+        for operation in operations {
+            switch operation {
+            case .equal(let token):
+                appendDiffToken(token, to: attributedString)
+            case .insert(let token):
+                appendDiffToken(
+                    token,
+                    to: attributedString,
+                    foregroundColor: UIColor.systemGreen,
+                    backgroundColor: UIColor.systemGreen.withAlphaComponent(0.24)
+                )
             case .delete(let token):
                 appendDiffToken(
                     token,
-                    to: result,
+                    to: attributedString,
                     foregroundColor: UIColor.systemRed,
                     backgroundColor: UIColor.systemRed.withAlphaComponent(0.18),
                     strikethrough: true
                 )
             }
         }
+    }
 
-        return AttributedString(result)
+    private func wordTokens(in text: String) -> [String] {
+        guard !text.isEmpty else { return [] }
+
+        var tokens: [String] = []
+        var startIndex = text.startIndex
+        var isWhitespace = text[startIndex].isWhitespace
+        var index = text.index(after: startIndex)
+
+        while index < text.endIndex {
+            let currentIsWhitespace = text[index].isWhitespace
+            if currentIsWhitespace != isWhitespace {
+                tokens.append(String(text[startIndex..<index]))
+                startIndex = index
+                isWhitespace = currentIsWhitespace
+            }
+            index = text.index(after: index)
+        }
+
+        tokens.append(String(text[startIndex..<text.endIndex]))
+        return tokens
     }
 
     private func appendDiffToken(
@@ -395,133 +457,97 @@ struct CompareDraftsView: View {
         attributedString.append(NSAttributedString(string: token, attributes: attributes))
     }
 
-    private func diffTokens(in text: String) -> [String] {
-        guard let firstCharacter = text.first else { return [] }
+    private func sentenceChunks(in text: String) -> [String] {
+        guard !text.isEmpty else { return [] }
 
-        var tokens: [String] = []
-        var tokenStart = text.startIndex
-        var tokenIsWhitespace = firstCharacter.isWhitespace
-        var index = text.index(after: tokenStart)
+        let nsText = text as NSString
+        var chunks: [String] = []
+        var cursor = text.startIndex
+        var foundSentence = false
 
-        while index < text.endIndex {
-            let isWhitespace = text[index].isWhitespace
-            if isWhitespace != tokenIsWhitespace {
-                tokens.append(String(text[tokenStart..<index]))
-                tokenStart = index
-                tokenIsWhitespace = isWhitespace
+        nsText.enumerateSubstrings(in: NSRange(location: 0, length: nsText.length), options: .bySentences) { _, sentenceRange, _, _ in
+            guard sentenceRange.location != NSNotFound else { return }
+
+            foundSentence = true
+            let start = text.index(text.startIndex, offsetBy: sentenceRange.location)
+            let end = text.index(text.startIndex, offsetBy: sentenceRange.location + sentenceRange.length)
+
+            if cursor < end {
+                chunks.append(String(text[cursor..<end]))
+                cursor = end
             }
-            index = text.index(after: index)
         }
 
-        tokens.append(String(text[tokenStart..<text.endIndex]))
-        return tokens
+        if foundSentence, cursor < text.endIndex {
+            chunks.append(String(text[cursor..<text.endIndex]))
+        }
+
+        if !foundSentence {
+            return [text]
+        }
+
+        return chunks.isEmpty ? [text] : chunks
     }
 
     private func diffOperations(from baseTokens: [String], to targetTokens: [String]) -> [DraftDiffOperation] {
+        let difference = targetTokens.difference(from: baseTokens)
+        let removals: [CollectionDifference<String>.Change] = difference.removals
+        let insertions: [CollectionDifference<String>.Change] = difference.insertions
+
         var operations: [DraftDiffOperation] = []
+        var baseIndex = 0
+        var targetIndex = 0
+        var removalIndex = 0
+        var insertionIndex = 0
 
-        func recurse(_ baseStart: Int, _ baseEnd: Int, _ targetStart: Int, _ targetEnd: Int) {
-            var baseStartIndex = baseStart
-            var targetStartIndex = targetStart
-            var baseEndIndex = baseEnd
-            var targetEndIndex = targetEnd
+        let sortedRemovals = removals.sorted(by: { changeOffset($0) < changeOffset($1) })
+        let sortedInsertions = insertions.sorted(by: { changeOffset($0) < changeOffset($1) })
 
-            while baseStartIndex < baseEndIndex,
-                  targetStartIndex < targetEndIndex,
-                  baseTokens[baseStartIndex] == targetTokens[targetStartIndex] {
-                operations.append(.equal(baseTokens[baseStartIndex]))
-                baseStartIndex += 1
-                targetStartIndex += 1
+        while baseIndex < baseTokens.count || targetIndex < targetTokens.count {
+            while removalIndex < sortedRemovals.count, changeOffset(sortedRemovals[removalIndex]) == baseIndex {
+                operations.append(.delete(baseTokens[baseIndex]))
+                baseIndex += 1
+                removalIndex += 1
             }
 
-            while baseStartIndex < baseEndIndex,
-                  targetStartIndex < targetEndIndex,
-                  baseTokens[baseEndIndex - 1] == targetTokens[targetEndIndex - 1] {
-                baseEndIndex -= 1
-                targetEndIndex -= 1
+            while insertionIndex < sortedInsertions.count, changeOffset(sortedInsertions[insertionIndex]) == targetIndex {
+                operations.append(.insert(targetTokens[targetIndex]))
+                targetIndex += 1
+                insertionIndex += 1
             }
 
-            if baseStartIndex >= baseEndIndex {
-                for index in targetStartIndex..<targetEndIndex {
-                    operations.append(.insert(targetTokens[index]))
-                }
-
-                for index in baseEndIndex..<baseEnd {
-                    operations.append(.equal(baseTokens[index]))
-                }
-                return
+            if baseIndex < baseTokens.count,
+               targetIndex < targetTokens.count,
+               baseTokens[baseIndex] == targetTokens[targetIndex] {
+                operations.append(.equal(baseTokens[baseIndex]))
+                baseIndex += 1
+                targetIndex += 1
+                continue
             }
 
-            if targetStartIndex >= targetEndIndex {
-                for index in baseStartIndex..<baseEndIndex {
-                    operations.append(.delete(baseTokens[index]))
-                }
-
-                for index in baseEndIndex..<baseEnd {
-                    operations.append(.equal(baseTokens[index]))
-                }
-                return
+            if baseIndex < baseTokens.count {
+                operations.append(.delete(baseTokens[baseIndex]))
+                baseIndex += 1
+                continue
             }
 
-            let baseMiddle = baseStartIndex..<baseEndIndex
-            let targetMiddle = targetStartIndex..<targetEndIndex
-
-            if let anchor = uniqueCommonAnchor(in: baseMiddle, and: targetMiddle, baseTokens: baseTokens, targetTokens: targetTokens) {
-                recurse(baseStartIndex, anchor.baseIndex, targetStartIndex, anchor.targetIndex)
-                operations.append(.equal(baseTokens[anchor.baseIndex]))
-                recurse(anchor.baseIndex + 1, baseEndIndex, anchor.targetIndex + 1, targetEndIndex)
-
-                for index in baseEndIndex..<baseEnd {
-                    operations.append(.equal(baseTokens[index]))
-                }
-                return
-            }
-
-            for index in baseStartIndex..<baseEndIndex {
-                operations.append(.delete(baseTokens[index]))
-            }
-
-            for index in targetStartIndex..<targetEndIndex {
-                operations.append(.insert(targetTokens[index]))
-            }
-
-            for index in baseEndIndex..<baseEnd {
-                operations.append(.equal(baseTokens[index]))
+            if targetIndex < targetTokens.count {
+                operations.append(.insert(targetTokens[targetIndex]))
+                targetIndex += 1
+                continue
             }
         }
 
-        recurse(0, baseTokens.count, 0, targetTokens.count)
         return operations
     }
 
-    private func uniqueCommonAnchor(
-        in baseRange: Range<Int>,
-        and targetRange: Range<Int>,
-        baseTokens: [String],
-        targetTokens: [String]
-    ) -> (baseIndex: Int, targetIndex: Int)? {
-        var baseCounts: [String: Int] = [:]
-        var targetCounts: [String: Int] = [:]
-
-        for index in baseRange {
-            baseCounts[baseTokens[index], default: 0] += 1
+    private func changeOffset(_ change: CollectionDifference<String>.Change) -> Int {
+        switch change {
+        case .insert(let offset, _, _):
+            return offset
+        case .remove(let offset, _, _):
+            return offset
         }
-
-        for index in targetRange {
-            targetCounts[targetTokens[index], default: 0] += 1
-        }
-
-        for baseIndex in baseRange {
-            let token = baseTokens[baseIndex]
-            guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            guard baseCounts[token] == 1, targetCounts[token] == 1 else { continue }
-
-            if let targetIndex = targetRange.firstIndex(where: { targetTokens[$0] == token }) {
-                return (baseIndex, targetIndex)
-            }
-        }
-
-        return nil
     }
 }
 

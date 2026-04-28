@@ -21,6 +21,15 @@ struct ProjectDetailView: View {
         var taggedTextBySection: [UUID: [String: Set<String>]]
     }
 
+    enum NoteDeletionAction: Equatable {
+        case resolvedNote(sectionID: UUID, resolvedIndex: Int)
+        case clearAll(sectionID: UUID)
+    }
+
+    enum SectionDeletionAction: Equatable {
+        case section(sectionID: UUID)
+    }
+
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -47,6 +56,8 @@ struct ProjectDetailView: View {
     @State private var revealedResolveNoteKey: String? = nil
     @State private var noteDraftBySection: [UUID: String] = [:]
     @State private var editingNoteKeys: Set<String> = []
+    @State private var pendingNoteDeletion: NoteDeletionAction? = nil
+    @State private var pendingSectionDeletion: SectionDeletionAction? = nil
     @State private var openingAllSectionWindows: Bool = false
     @State private var allSectionWindowsVisible: Bool = false
     @State private var sectionTags: [UUID: Set<String>] = [:]
@@ -73,155 +84,280 @@ struct ProjectDetailView: View {
     let projectID: UUID
 
     var body: some View {
-        if let project = model.projects.first(where: { $0.id == projectID }) {
-            ZStack {
-                HStack(spacing: 0) {
-                    toolbarView
-                    toggleButton
-                    if showingRestitchedManuscript {
-                        restitchedManuscriptView(project: project)
-                    } else {
-                        mainContentView(project: project)
-                    }
-                }
+        Group {
+            if let project = model.projects.first(where: { $0.id == projectID }) {
+                projectEditor(project: project)
+            } else {
+                Text("Project not found")
+            }
+        }
+    }
 
-                if showingCustomFontSizeSheet {
-                    Color.black.opacity(0.001)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            closeCustomFontSizePopup()
-                        }
+    @ViewBuilder
+    private func projectEditor(project: AppModel.Project) -> some View {
+        mainLayout(project: project)
+            .modifier(DialogsModifier(parent: self, project: project))
+            .modifier(LifecycleModifier(parent: self, project: project))
+    }
 
-                    customFontSizeCenteredPopup
-                }
-            }
-            .confirmationDialog(
-                "Tag options",
-                isPresented: Binding(
-                    get: { tagActionSectionID != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            tagActionSectionID = nil
-                            tagActionSectionTags = []
-                            tagActionTextTags = []
-                        }
-                    }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let sectionID = tagActionSectionID {
-                    if !tagActionSectionTags.isEmpty {
-                        SwiftUI.Section("Remove section tag") {
-                            ForEach(tagActionSectionTags, id: \.self) { tag in
-                                Button("Delete \(tag) (Section)", role: .destructive) {
-                                    removeSectionTag(tag, from: sectionID)
-                                }
-                            }
-                        }
-                    }
+    @ViewBuilder
+    private func mainLayout(project: AppModel.Project) -> some View {
+        ZStack {
+            contentRow(project: project)
+            overlayLayer
+        }
+    }
 
-                    if !tagActionSectionTags.isEmpty && !tagActionTextTags.isEmpty {
-                        Divider()
-                    }
+    @ViewBuilder
+    private func contentRow(project: AppModel.Project) -> some View {
+        HStack(spacing: 0) {
+            toolbarView
+            toggleButton
+            contentSwitcher(project: project)
+        }
+    }
 
-                    if !tagActionTextTags.isEmpty {
-                        SwiftUI.Section("Remove text tag") {
-                            ForEach(tagActionTextTags, id: \.self) { tag in
-                                Button("Delete \(tag) (Text)", role: .destructive) {
-                                    removeTextTag(tag, from: sectionID)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .onAppear {
-                projectUndoStack.removeAll()
-                projectRedoStack.removeAll()
-                hasInitializedSectionHistory = false
-                isApplyingUndo = false
-                isApplyingRedo = false
-                isSyncingSectionsFromModel = true
-                initializeSections(from: project)
-                windowMode = model.isSectionsWindowOpen
-            }
-            .onChange(of: windowMode) { _, isOn in
-                if model.isSectionsWindowOpen != isOn {
-                    model.isSectionsWindowOpen = isOn
-                }
-                if isOn {
-                    openWindow(id: "sections-window")
-                } else {
-                    dismissWindow(id: "sections-window")
-                }
-            }
-            .onChange(of: model.isSectionsWindowOpen) { _, isOpen in
-                if windowMode != isOpen {
-                    windowMode = isOpen
-                }
-            }
-            .onChange(of: sections) { oldSections, newSections in
-                if !hasInitializedSectionHistory {
-                    hasInitializedSectionHistory = true
-                } else if !isApplyingUndo && !isApplyingRedo && !isSyncingSectionsFromModel && oldSections != newSections {
-                    let oldSnapshot = ProjectEditSnapshot(
-                        sections: oldSections,
-                        sectionTags: sectionTags,
-                        taggedTextBySection: taggedTextBySection
-                    )
-                    pushUndoSnapshot(oldSnapshot)
-                }
-
-                if isApplyingUndo {
-                    isApplyingUndo = false
-                }
-
-                if isApplyingRedo {
-                    isApplyingRedo = false
-                }
-
-                if isSyncingSectionsFromModel {
-                    isSyncingSectionsFromModel = false
-                }
-
-                model.updateProjectSections(id: projectID, sections: newSections)
-                sanitizeActiveFilterTags()
-            }
-            .onChange(of: project.sections) { _, updatedSections in
-                guard updatedSections != sections else { return }
-                isSyncingSectionsFromModel = true
-                sections = updatedSections
-            }
-            .onChange(of: sectionTags) { _, _ in
-                sanitizeActiveFilterTags()
-                enforceTimelineAvailability()
-            }
-            .onChange(of: taggedTextBySection) { _, _ in
-                sanitizeActiveFilterTags()
-                enforceTimelineAvailability()
-            }
-            .onChange(of: customTagCategories) { _, _ in
-                sanitizeActiveFilterTags()
-                enforceTimelineAvailability()
-            }
-            .onChange(of: activeFilterTags) { _, newFilters in
-                guard !newFilters.isEmpty else { return }
-                if !hasFilterMatch(for: newFilters) {
-                    showingNoFilterMatchAlert = true
-                }
-            }
-
-            .alert("No filter match", isPresented: $showingNoFilterMatchAlert) {
-                Button("OK", role: .cancel) {}
-            }
-            .fileExporter(
-                isPresented: $showingRestitchedDocxExport,
-                document: restitchedDocxDocument,
-                contentType: UTType(filenameExtension: "docx")!,
-                defaultFilename: "\(project.title)-restitched.docx"
-            ) { _ in }
+    @ViewBuilder
+    private func contentSwitcher(project: AppModel.Project) -> some View {
+        if showingRestitchedManuscript {
+            restitchedManuscriptView(project: project)
         } else {
-            Text("Project not found")
+            mainContentView(project: project)
+        }
+    }
+
+    @ViewBuilder
+    private var overlayLayer: some View {
+        if showingCustomFontSizeSheet {
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    closeCustomFontSizePopup()
+                }
+
+            customFontSizeCenteredPopup
+        }
+    }
+
+    struct DialogsModifier: ViewModifier {
+        let parent: ProjectDetailView
+        let project: AppModel.Project
+
+        func body(content: Content) -> some View {
+            content
+                .confirmationDialog(
+                    "Tag options",
+                    isPresented: Binding(
+                        get: { parent.tagActionSectionID != nil },
+                        set: { isPresented in
+                            if !isPresented {
+                                parent.tagActionSectionID = nil
+                                parent.tagActionSectionTags = []
+                                parent.tagActionTextTags = []
+                            }
+                        }
+                    ),
+                    titleVisibility: .visible
+                ) {
+                    if let sectionID = parent.tagActionSectionID {
+                        if !parent.tagActionSectionTags.isEmpty {
+                            SwiftUI.Section("Remove section tag") {
+                                ForEach(parent.tagActionSectionTags, id: \.self) { tag in
+                                    Button("Delete \(tag) (Section)", role: .destructive) {
+                                        parent.removeSectionTag(tag, from: sectionID)
+                                    }
+                                }
+                            }
+                        }
+
+                        if !parent.tagActionSectionTags.isEmpty && !parent.tagActionTextTags.isEmpty {
+                            Divider()
+                        }
+
+                        if !parent.tagActionTextTags.isEmpty {
+                            SwiftUI.Section("Remove text tag") {
+                                ForEach(parent.tagActionTextTags, id: \.self) { tag in
+                                    Button("Delete \(tag) (Text)", role: .destructive) {
+                                        parent.removeTextTag(tag, from: sectionID)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .confirmationDialog(
+                    parent.pendingNoteDeletionTitle,
+                    isPresented: Binding(
+                        get: { parent.pendingNoteDeletion != nil },
+                        set: { isPresented in
+                            if !isPresented {
+                                parent.pendingNoteDeletion = nil
+                            }
+                        }
+                    ),
+                    titleVisibility: .visible
+                ) {
+                    if let pending = parent.pendingNoteDeletion {
+                        switch pending {
+                        case .resolvedNote(let sectionID, let resolvedIndex):
+                            Button("Delete Note", role: .destructive) {
+                                parent.deleteResolvedNote(sectionID: sectionID, resolvedIndex: resolvedIndex)
+                                parent.pendingNoteDeletion = nil
+                            }
+
+                        case .clearAll(let sectionID):
+                            Button("Clear Notes", role: .destructive) {
+                                parent.clearAllNotes(in: sectionID)
+                                parent.pendingNoteDeletion = nil
+                            }
+                        }
+                    }
+
+                    Button("Cancel", role: .cancel) {
+                        parent.pendingNoteDeletion = nil
+                    }
+                } message: {
+                    Text(parent.pendingNoteDeletionMessage)
+                }
+                .confirmationDialog(
+                    parent.pendingSectionDeletionTitle,
+                    isPresented: Binding(
+                        get: { parent.pendingSectionDeletion != nil },
+                        set: { isPresented in
+                            if !isPresented {
+                                parent.pendingSectionDeletion = nil
+                            }
+                        }
+                    ),
+                    titleVisibility: .visible
+                ) {
+                    if let pending = parent.pendingSectionDeletion {
+                        switch pending {
+                        case .section(let sectionID):
+                            Button("Delete Section", role: .destructive) {
+                                parent.deleteSection(id: sectionID)
+                                parent.pendingSectionDeletion = nil
+                            }
+                        }
+                    }
+
+                    Button("Cancel", role: .cancel) {
+                        parent.pendingSectionDeletion = nil
+                    }
+                } message: {
+                    Text(parent.pendingSectionDeletionMessage)
+                }
+                .alert("No filter match", isPresented: parent.$showingNoFilterMatchAlert) {
+                    Button("OK", role: .cancel) {}
+                }
+                .fileExporter(
+                    isPresented: parent.$showingRestitchedDocxExport,
+                    document: parent.restitchedDocxDocument,
+                    contentType: UTType(filenameExtension: "docx")!,
+                    defaultFilename: "\(project.title)-restitched.docx"
+                ) { _ in }
+        }
+    }
+
+    struct LifecycleModifier: ViewModifier {
+        let parent: ProjectDetailView
+        let project: AppModel.Project
+
+        func body(content: Content) -> some View {
+            content
+                .onAppear {
+                    parent.handleOnAppear(project: project)
+                }
+                .onChange(of: parent.windowMode) { _, isOn in
+                    parent.handleWindowModeChange(isOn)
+                }
+                .onChange(of: parent.model.isSectionsWindowOpen) { _, isOpen in
+                    parent.syncWindowMode(isOpen)
+                }
+                .onChange(of: parent.sections) { oldSections, newSections in
+                    parent.handleSectionsChange(old: oldSections, new: newSections)
+                }
+                .onChange(of: project.sections) { _, updatedSections in
+                    parent.handleProjectSectionsChange(updatedSections)
+                }
+                .onChange(of: parent.sectionTags) { _, _ in
+                    parent.handleTagChange()
+                }
+                .onChange(of: parent.taggedTextBySection) { _, _ in
+                    parent.handleTagChange()
+                }
+                .onChange(of: parent.customTagCategories) { _, _ in
+                    parent.handleTagChange()
+                }
+                .onChange(of: parent.activeFilterTags) { _, newFilters in
+                    parent.handleFilterChange(newFilters)
+                }
+        }
+    }
+
+    func handleOnAppear(project: AppModel.Project) {
+        projectUndoStack.removeAll()
+        projectRedoStack.removeAll()
+        hasInitializedSectionHistory = false
+        isApplyingUndo = false
+        isApplyingRedo = false
+        isSyncingSectionsFromModel = true
+        initializeSections(from: project)
+        windowMode = model.isSectionsWindowOpen
+    }
+
+    func handleWindowModeChange(_ isOn: Bool) {
+        if model.isSectionsWindowOpen != isOn {
+            model.isSectionsWindowOpen = isOn
+        }
+        if isOn {
+            openWindow(id: "sections-window")
+        } else {
+            dismissWindow(id: "sections-window")
+        }
+    }
+
+    func syncWindowMode(_ isOpen: Bool) {
+        if windowMode != isOpen {
+            windowMode = isOpen
+        }
+    }
+
+    func handleSectionsChange(old: [Section], new: [Section]) {
+        if !hasInitializedSectionHistory {
+            hasInitializedSectionHistory = true
+        } else if !isApplyingUndo && !isApplyingRedo && !isSyncingSectionsFromModel && old != new {
+            let snapshot = ProjectEditSnapshot(
+                sections: old,
+                sectionTags: sectionTags,
+                taggedTextBySection: taggedTextBySection
+            )
+            pushUndoSnapshot(snapshot)
+        }
+
+        if isApplyingUndo { isApplyingUndo = false }
+        if isApplyingRedo { isApplyingRedo = false }
+        if isSyncingSectionsFromModel { isSyncingSectionsFromModel = false }
+
+        model.updateProjectSections(id: projectID, sections: new)
+        sanitizeActiveFilterTags()
+    }
+
+    func handleProjectSectionsChange(_ updated: [Section]) {
+        guard updated != sections else { return }
+        isSyncingSectionsFromModel = true
+        sections = updated
+    }
+
+    func handleTagChange() {
+        sanitizeActiveFilterTags()
+        enforceTimelineAvailability()
+    }
+
+    func handleFilterChange(_ newFilters: Set<String>) {
+        guard !newFilters.isEmpty else { return }
+        if !hasFilterMatch(for: newFilters) {
+            showingNoFilterMatchAlert = true
         }
     }
 
@@ -1724,7 +1860,7 @@ struct ProjectDetailView: View {
                         .help("Open this section in a window")
 
                         Button(role: .destructive) {
-                            deleteSection(id: section.id)
+                            pendingSectionDeletion = .section(sectionID: section.id)
                         } label: {
                             Image(systemName: "trash")
                                 .font(.system(size: 20))
@@ -1760,112 +1896,115 @@ struct ProjectDetailView: View {
                 ForEach(Array(notes.indices), id: \.self) { noteIndex in
                     let noteKey = "\(sectionID.uuidString)-\(noteIndex)"
                     let resolveKey = "\(sectionID.uuidString)-\(noteIndex)"
+                    let isEditingNote = editingNoteKeys.contains(noteKey)
 
                     HStack(alignment: .top, spacing: 8) {
                         Text("•")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        if let sectionIndex, editingNoteKeys.contains(noteKey) {
+                        if isEditingNote, let sectionIndex {
                             let currentIndex = sectionIndex
                             let binding: Binding<String> = Binding(
                                 get: {
-                                guard sections.indices.contains(currentIndex),
-                                    sections[currentIndex].notes.indices.contains(noteIndex) else { return "" }
-                                return sections[currentIndex].notes[noteIndex]
+                                    guard sections.indices.contains(currentIndex),
+                                          sections[currentIndex].notes.indices.contains(noteIndex) else { return "" }
+                                    return sections[currentIndex].notes[noteIndex]
                                 },
                                 set: { newValue in
-                                guard sections.indices.contains(currentIndex),
-                                    sections[currentIndex].notes.indices.contains(noteIndex) else { return }
-                                sections[currentIndex].notes[noteIndex] = newValue
+                                    guard sections.indices.contains(currentIndex),
+                                          sections[currentIndex].notes.indices.contains(noteIndex) else { return }
+                                    sections[currentIndex].notes[noteIndex] = newValue
                                 }
                             )
+
                             TextField("Edit note", text: binding)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.subheadline)
-                        } else {
-                            Text(notes[noteIndex])
-                                .font(.subheadline)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
 
-                        HStack(spacing: 6) {
-                            if revealedResolveNoteKey == resolveKey {
-                                Button {
-                                    if editingNoteKeys.contains(noteKey) {
-                                        editingNoteKeys.remove(noteKey)
-                                    } else {
-                                        editingNoteKeys.insert(noteKey)
-                                    }
-                                } label: {
-                                    Group {
-                                        if editingNoteKeys.contains(noteKey) {
-                                            Text("Save")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        } else {
-                                            Image(systemName: "pencil")
-                                                .font(.system(size: 16))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .frame(width: 44, height: 28)
+                            Button {
+                                editingNoteKeys.remove(noteKey)
+                            } label: {
+                                Text("Save")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 48, height: 32)
                                     .background(
                                         RoundedRectangle(cornerRadius: 14)
                                             .fill(Color.secondary.opacity(0.08))
                                     )
+                            }
+                            .buttonStyle(.plain)
+                            .help("Save edit")
+                        } else {
+                            Text(notes[noteIndex])
+                                .font(.subheadline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            HStack(spacing: 6) {
+                                if revealedResolveNoteKey == resolveKey {
+                                    Button {
+                                        editingNoteKeys.insert(noteKey)
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 44, height: 28)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 14)
+                                                    .fill(Color.secondary.opacity(0.08))
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Edit note")
+
+                                    Button {
+                                        resolveNote(sectionID: sectionID, noteIndex: noteIndex)
+                                        revealedResolveNoteKey = nil
+                                    } label: {
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.secondary.opacity(0.08))
+                                                .frame(width: 28, height: 28)
+
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 16))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Mark note as resolved")
                                 }
-                                .buttonStyle(.plain)
-                                .help(editingNoteKeys.contains(noteKey) ? "Save edit" : "Edit note")
+
+                                Spacer(minLength: 0)
 
                                 Button {
-                                    resolveNote(sectionID: sectionID, noteIndex: noteIndex)
-                                    revealedResolveNoteKey = nil
+                                    if revealedResolveNoteKey == resolveKey {
+                                        revealedResolveNoteKey = nil
+                                    } else {
+                                        revealedResolveNoteKey = resolveKey
+                                    }
                                 } label: {
                                     ZStack {
                                         Circle()
-                                            .fill(Color.secondary.opacity(0.08))
+                                            .fill(Color.secondary.opacity(0.18))
                                             .frame(width: 28, height: 28)
-
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 16))
-                                            .foregroundStyle(.secondary)
                                     }
                                 }
                                 .buttonStyle(.plain)
-                                .help("Mark note as resolved")
+                                .help(revealedResolveNoteKey == resolveKey ? "Hide note actions" : "Show note actions")
                             }
-
-                            Spacer(minLength: 0)
-
-                            Button {
-                                if revealedResolveNoteKey == resolveKey {
-                                    revealedResolveNoteKey = nil
-                                } else {
-                                    revealedResolveNoteKey = resolveKey
-                                }
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.secondary.opacity(0.18))
-                                        .frame(width: 28, height: 28)
-
-                                    // Image(systemName: revealedResolveNoteKey == resolveKey ? "chevron.up" : "chevron.down")
-                                    //     .font(.system(size: 12, weight: .semibold))
-                                    //     .foregroundStyle(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .help(revealedResolveNoteKey == resolveKey ? "Hide note actions" : "Show note actions")
+                            .frame(width: 120, alignment: .trailing)
                         }
-                        .frame(width: 120, alignment: .trailing)
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        if revealedResolveNoteKey == resolveKey {
-                            revealedResolveNoteKey = nil
-                        } else {
-                            revealedResolveNoteKey = resolveKey
+                        if !isEditingNote {
+                            if revealedResolveNoteKey == resolveKey {
+                                revealedResolveNoteKey = nil
+                            } else {
+                                revealedResolveNoteKey = resolveKey
+                            }
                         }
                     }
                 }
@@ -1922,7 +2061,7 @@ struct ProjectDetailView: View {
                     .buttonStyle(.plain)
 
                     Button {
-                        clearAllNotes(in: sectionID)
+                        pendingNoteDeletion = .clearAll(sectionID: sectionID)
                     } label: {
                         Label("Clear All", systemImage: "xmark")
                             .font(.caption)
@@ -1942,11 +2081,41 @@ struct ProjectDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(Array(resolvedNotes.enumerated()), id: \.offset) { _, note in
-                        Text("• \(note)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(Array(resolvedNotes.enumerated()), id: \.offset) { resolvedIndex, note in
+                        let resolvedNoteKey = "resolved-\(sectionID.uuidString)-\(resolvedIndex)"
+
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("• \(note)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            if revealedResolveNoteKey == resolvedNoteKey {
+                                Button {
+                                    pendingNoteDeletion = .resolvedNote(sectionID: sectionID, resolvedIndex: resolvedIndex)
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.red.opacity(0.10))
+                                            .frame(width: 24, height: 24)
+
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(.red)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .help("Delete resolved note")
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if revealedResolveNoteKey == resolvedNoteKey {
+                                revealedResolveNoteKey = nil
+                            } else {
+                                revealedResolveNoteKey = resolvedNoteKey
+                            }
+                        }
                     }
                 }
             }
@@ -2327,6 +2496,23 @@ struct ProjectDetailView: View {
         revealedResolveNoteKey = nil
     }
 
+    func deleteNote(sectionID: UUID, noteIndex: Int) {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }),
+              sections[idx].notes.indices.contains(noteIndex) else { return }
+
+        editingNoteKeys = editingNoteKeys.filter { !$0.hasPrefix("\(sectionID.uuidString)-") }
+        sections[idx].notes.remove(at: noteIndex)
+        revealedResolveNoteKey = nil
+    }
+
+    func deleteResolvedNote(sectionID: UUID, resolvedIndex: Int) {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }),
+              sections[idx].resolvedNotes.indices.contains(resolvedIndex) else { return }
+
+        sections[idx].resolvedNotes.remove(at: resolvedIndex)
+        visibleResolvedNoteSectionIDs.insert(sectionID)
+    }
+
     func openAllSectionsInWindows() {
         guard !sections.isEmpty, !openingAllSectionWindows else { return }
 
@@ -2383,6 +2569,84 @@ struct ProjectDetailView: View {
         if let key = revealedResolveNoteKey, key.hasPrefix("\(sectionID.uuidString)-") {
             revealedResolveNoteKey = nil
         }
+    }
+
+    private var pendingNoteDeletionTitle: String {
+        guard let pendingNoteDeletion else { return "Delete item?" }
+
+        switch pendingNoteDeletion {
+        case .resolvedNote(let sectionID, let resolvedIndex):
+            let sectionNumber = originalSectionIndex(for: sectionID) + 1
+            return "Delete resolved note from Section \(sectionNumber)?"
+
+        case .clearAll(let sectionID):
+            let sectionNumber = originalSectionIndex(for: sectionID) + 1
+            return "Clear all notes from Section \(sectionNumber)?"
+        }
+    }
+
+    private var pendingNoteDeletionMessage: String {
+        guard let pendingNoteDeletion else { return "This action cannot be undone." }
+
+        switch pendingNoteDeletion {
+        case .resolvedNote(let sectionID, let resolvedIndex):
+            let sectionNumber = originalSectionIndex(for: sectionID) + 1
+            if let notePreview = resolvedNotePreview(for: sectionID, resolvedIndex: resolvedIndex) {
+                return "This will delete one resolved note from Section \(sectionNumber): \(notePreview)"
+            }
+            return "This will delete one resolved note from Section \(sectionNumber)."
+
+        case .clearAll(let sectionID):
+            let sectionNumber = originalSectionIndex(for: sectionID) + 1
+            let noteCount = noteDeletionCount(for: sectionID)
+            return "This will delete \(noteCount) note\(noteCount == 1 ? "" : "s") from Section \(sectionNumber)."
+        }
+    }
+
+    private var pendingSectionDeletionTitle: String {
+        guard let pendingSectionDeletion else { return "Delete section?" }
+
+        switch pendingSectionDeletion {
+        case .section(let sectionID):
+            let sectionNumber = originalSectionIndex(for: sectionID) + 1
+            return "Delete Section \(sectionNumber)?"
+        }
+    }
+
+    private var pendingSectionDeletionMessage: String {
+        guard let pendingSectionDeletion else { return "This action cannot be undone." }
+
+        switch pendingSectionDeletion {
+        case .section(let sectionID):
+            let sectionNumber = originalSectionIndex(for: sectionID) + 1
+            return "This will move Section \(sectionNumber) to the graveyard."
+        }
+    }
+
+    private func noteDeletionCount(for sectionID: UUID) -> Int {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }) else { return 0 }
+        return sections[idx].notes.count + sections[idx].resolvedNotes.count
+    }
+
+    private func resolvedNotePreview(for sectionID: UUID, resolvedIndex: Int, limit: Int = 80) -> String? {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }),
+              sections[idx].resolvedNotes.indices.contains(resolvedIndex) else { return nil }
+
+        return trimmedPreview(for: sections[idx].resolvedNotes[resolvedIndex], limit: limit)
+    }
+
+    private func sectionPreview(for sectionID: UUID, limit: Int = 80) -> String? {
+        guard let idx = sections.firstIndex(where: { $0.id == sectionID }) else { return nil }
+        return trimmedPreview(for: sections[idx].text, limit: limit)
+    }
+
+    private func trimmedPreview(for text: String, limit: Int) -> String? {
+        let preview = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !preview.isEmpty else { return nil }
+        if preview.count <= limit {
+            return preview
+        }
+        return String(preview.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
     enum TextStyle {
