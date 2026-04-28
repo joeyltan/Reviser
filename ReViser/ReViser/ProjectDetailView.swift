@@ -54,6 +54,8 @@ struct ProjectDetailView: View {
     @State private var visibleNoteOptionsSectionIDs: Set<UUID> = []
     @State private var visibleResolvedNoteSectionIDs: Set<UUID> = []
     @State private var revealedResolveNoteKey: String? = nil
+    @State private var revealedReorderHandleSectionID: UUID? = nil
+    @State private var draggedSectionID: UUID? = nil
     @State private var noteDraftBySection: [UUID: String] = [:]
     @State private var editingNoteKeys: Set<String> = []
     @State private var pendingNoteDeletion: NoteDeletionAction? = nil
@@ -1725,6 +1727,8 @@ struct ProjectDetailView: View {
     @ViewBuilder
     func sectionView(section: Section, index: Int) -> some View {
         HStack(alignment: .top, spacing: 8) {
+            reorderHandleView(for: section)
+
             VStack(alignment: .leading, spacing: 12) {
                 let sectionLevelTags = sectionLevelTags(for: section.id)
                 let textLevelTags = textLevelTags(for: section.id)
@@ -1878,6 +1882,59 @@ struct ProjectDetailView: View {
                 }
             }
             .padding(.leading, 8)
+        }
+        .opacity(draggedSectionID == section.id ? 0.6 : 1.0)
+        .onDrop(
+            of: [UTType.sectionReorder],
+            delegate: SectionReorderDropDelegate(
+                targetSection: section,
+                sections: $sections,
+                draggedSectionID: $draggedSectionID
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func reorderHandleView(for section: Section) -> some View {
+        if revealedReorderHandleSectionID == section.id {
+            Image("drag-handle-dots-2", bundle: .radixUI)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.12))
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .onDrag {
+                    draggedSectionID = section.id
+
+                    let provider = NSItemProvider()
+                    provider.registerDataRepresentation(
+                        forTypeIdentifier: UTType.sectionReorder.identifier,
+                        visibility: .all
+                    ) { completion in
+                        completion(Data(), nil)
+                        return nil
+                    }
+                    return provider
+                }
+                .help("Drag to reorder")
+        } else {
+            Button {
+                revealedReorderHandleSectionID = section.id
+            } label: {
+                Circle()
+                    .fill(Color.secondary.opacity(0.18))
+                    .frame(width: 10, height: 10)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.secondary.opacity(0.06))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Show drag handle")
         }
     }
     
