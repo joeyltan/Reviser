@@ -38,10 +38,10 @@ struct ReViserTests {
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
           <w:body>
             <w:p>
-              <w:r><w:b/><w:t>Bold</w:t></w:r>
-              <w:r><w:i/><w:t>Italic</w:t></w:r>
-              <w:r><w:u/><w:t>Underline</w:t></w:r>
-              <w:r><w:strike/><w:t>Strike</w:t></w:r>
+              <w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r>
+              <w:r><w:rPr><w:i/></w:rPr><w:t>Italic</w:t></w:r>
+              <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Underline</w:t></w:r>
+              <w:r><w:rPr><w:strike/></w:rPr><w:t>Strike</w:t></w:r>
             </w:p>
           </w:body>
         </w:document>
@@ -50,12 +50,14 @@ struct ReViserTests {
 
         await model.loadDocument(from: fileURL)
 
-        #expect(model.importedText.contains("**Bold**"))
-        #expect(model.importedText.contains("_Italic_"))
-        #expect(model.importedText.contains("__Underline__"))
-        #expect(model.importedText.contains("~~Strike~~"))
+        #expect(model.importedText == "BoldItalicUnderlineStrike\n")
         #expect(model.projects.count == 1)
         #expect(model.projects[0].sections.count == 1)
+        let section = model.projects[0].sections[0]
+        #expect(section.boldStyles == [TextStyleRange(location: 0, length: 4, style: "bold")])
+        #expect(section.italicStyles == [TextStyleRange(location: 4, length: 6, style: "italic")])
+        #expect(section.underlineStyles == [TextStyleRange(location: 10, length: 9, style: "underline")])
+        #expect(section.strikethroughStyles == [TextStyleRange(location: 19, length: 6, style: "strikethrough")])
     }
 
     @Test
@@ -219,30 +221,33 @@ struct ReViserTests {
     }
 
     @Test
-    func docxFormatterConvertsCommonFormattingMarkers() {
+    func docxFormatterCapturesStyledRanges() {
         let xml = """
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
           <w:body>
             <w:p>
-              <w:r><w:b/><w:t>Bold</w:t></w:r>
-              <w:r><w:i/><w:t>Italic</w:t></w:r>
-              <w:r><w:u/><w:t>Underline</w:t></w:r>
-              <w:r><w:strike/><w:t>Strike</w:t></w:r>
+              <w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r>
+              <w:r><w:rPr><w:i/></w:rPr><w:t>Italic</w:t></w:r>
+              <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Underline</w:t></w:r>
+              <w:r><w:rPr><w:strike/></w:rPr><w:t>Strike</w:t></w:r>
               <w:r><w:tab/></w:r>
+              <w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>Lit</w:t></w:r>
+              <w:r><w:rPr><w:shd w:val="clear" w:color="auto" w:fill="FFCC80"/></w:rPr><w:t>Shaded</w:t></w:r>
               <w:r><w:t>Plain</w:t></w:r>
             </w:p>
           </w:body>
         </w:document>
         """
 
-        let formatted = DocxFormatter().convert(documentXML: xml)
+        let result = DocxFormatter().convertWithStyles(documentXML: xml)
 
-        #expect(formatted.contains("**Bold**"))
-        #expect(formatted.contains("_Italic_"))
-        #expect(formatted.contains("__Underline__"))
-        #expect(formatted.contains("~~Strike~~"))
-        #expect(formatted.contains("\t"))
-        #expect(formatted.contains("Plain"))
+        #expect(result.text == "BoldItalicUnderlineStrike\tLitShadedPlain\n")
+        #expect(result.boldRanges == [TextStyleRange(location: 0, length: 4, style: "bold")])
+        #expect(result.italicRanges == [TextStyleRange(location: 4, length: 6, style: "italic")])
+        #expect(result.underlineRanges == [TextStyleRange(location: 10, length: 9, style: "underline")])
+        #expect(result.strikethroughRanges == [TextStyleRange(location: 19, length: 6, style: "strikethrough")])
+        #expect(result.highlightRanges.contains(TextStyleRange(location: 26, length: 3, style: "yellow")))
+        #expect(result.highlightRanges.contains(TextStyleRange(location: 29, length: 6, style: "orange")))
     }
 
     private func makeTemporaryFile(extension fileExtension: String, contents: String) throws -> URL {

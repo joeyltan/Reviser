@@ -93,10 +93,9 @@ class AppModel {
                 return
             }
             if url.pathExtension.lowercased() == "docx" {
-                let text = try await extractTextFromDocx(url: url)
-                print("extracting text from docx", text)
-                importedText = text
-                createOrUpdateProject(from: url, text: text)
+                let result = try await extractDocxImportResult(url: url)
+                importedText = result.text
+                createOrUpdateProject(from: url, importResult: result)
                 return
             }
             // Fallback: try to read as UTF-8 text
@@ -110,12 +109,27 @@ class AppModel {
         }
     }
 
+    private func createOrUpdateProject(from url: URL, importResult: DocxImportResult) {
+        let initialSection = Section(
+            id: UUID(),
+            text: importResult.text,
+            highlights: importResult.highlightRanges,
+            boldStyles: importResult.boldRanges,
+            italicStyles: importResult.italicRanges,
+            underlineStyles: importResult.underlineRanges,
+            strikethroughStyles: importResult.strikethroughRanges
+        )
+        updateProject(from: url, text: importResult.text, initialSection: initialSection)
+    }
+
     private func createOrUpdateProject(from url: URL, text: String) {
+        let initialSection = Section(id: UUID(), text: text)
+        updateProject(from: url, text: text, initialSection: initialSection)
+    }
+
+    private func updateProject(from url: URL, text: String, initialSection: Section) {
         let baseTitle = url.deletingPathExtension().lastPathComponent
         let now = Date()
-
-        // Create initial section
-        let initialSection = Section(id: UUID(), text: text)
 
         if let idx = projects.firstIndex(where: { $0.sourceURL == url }) {
             // Update existing project
@@ -188,10 +202,8 @@ class AppModel {
         sectionGraveyard.removeAll { $0.id == deletedID }
     }
 
-    /// Extremely lightweight .docx text extraction by unzipping and reading word/document.xml, then stripping basic XML tags.
-    private func extractTextFromDocx(url: URL) async throws -> String {
-        // Open the .docx as a ZIP archive
-        // ok this is not loaded in quite right, because it already has the repetition here
+    /// Extracts text and inline style ranges from a .docx by unzipping and parsing word/document.xml.
+    private func extractDocxImportResult(url: URL) async throws -> DocxImportResult {
         let archive: Archive
         do {
             archive = try Archive(url: url, accessMode: .read)
@@ -199,10 +211,9 @@ class AppModel {
             throw NSError(domain: "Docx", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unable to open DOCX archive: \(error.localizedDescription)"])
         }
 
-        // Only extract the main document body to avoid repeated header/footer content.
         let mainPath = "word/document.xml"
         guard let entry = archive[mainPath] else {
-            return ""
+            return DocxImportResult(text: "", boldRanges: [], italicRanges: [], underlineRanges: [], strikethroughRanges: [], highlightRanges: [])
         }
 
         var xmlData = Data()
@@ -210,10 +221,10 @@ class AppModel {
             xmlData.append(chunk)
         }
         guard let xmlString = String(data: xmlData, encoding: .utf8) else {
-            return ""
+            return DocxImportResult(text: "", boldRanges: [], italicRanges: [], underlineRanges: [], strikethroughRanges: [], highlightRanges: [])
         }
 
-        return DocxFormatter().convert(documentXML: xmlString)
+        return DocxFormatter().convertWithStyles(documentXML: xmlString)
     }
 
     

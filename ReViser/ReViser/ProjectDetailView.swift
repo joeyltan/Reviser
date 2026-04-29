@@ -2430,16 +2430,30 @@ struct ProjectDetailView: View {
         let secondRange = NSRange(location: secondStart, length: nsText.length - secondStart)
         let second = nsText.substring(with: secondRange)
 
-        // Replace section with two new ones
+        let originalHeight = sectionHeights[id] ?? textView.sizeThatFits(CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude)).height
+        let firstID = UUID()
+        let secondID = UUID()
+
         sections.remove(at: index)
 
         if !first.isEmpty {
-            sections.insert(styledSection(from: sourceSection, text: first, sourceRange: firstRange, id: UUID()), at: index)
+            sections.insert(styledSection(from: sourceSection, text: first, sourceRange: firstRange, id: firstID), at: index)
         }
 
         if !second.isEmpty {
-            sections.insert(styledSection(from: sourceSection, text: second, sourceRange: secondRange, id: UUID()), at: index + (first.isEmpty ? 0 : 1))
+            sections.insert(styledSection(from: sourceSection, text: second, sourceRange: secondRange, id: secondID), at: index + (first.isEmpty ? 0 : 1))
         }
+
+        seedSplitHeights(
+            originalHeight: originalHeight,
+            firstID: first.isEmpty ? nil : firstID,
+            firstLength: first.count,
+            middleID: nil,
+            middleLength: 0,
+            secondID: second.isEmpty ? nil : secondID,
+            secondLength: second.count
+        )
+        sectionHeights[id] = nil
     }
 
     func splitAtCurrentCaret() {
@@ -2456,6 +2470,8 @@ struct ProjectDetailView: View {
         let middle = selectedRange.length > 0 ? nsText.substring(with: selectedRange) : ""
         let second = nsText.substring(from: selectedRange.location + selectedRange.length)
 
+        let originalHeight = sectionHeights[id] ?? textView.sizeThatFits(CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude)).height
+
         sections.remove(at: index)
 
         textViews[id] = nil
@@ -2468,24 +2484,34 @@ struct ProjectDetailView: View {
         editingNoteKeys = editingNoteKeys.filter { !$0.hasPrefix("\(id.uuidString)-") }
 
         var insertedSectionIDs: [UUID] = []
+        let firstSectionID = first.isEmpty ? nil : UUID()
+        let middleSectionID = middle.isEmpty ? nil : UUID()
+        let secondSectionID = second.isEmpty ? nil : UUID()
 
-        if !first.isEmpty {
-            let firstSectionID = UUID()
+        if let firstSectionID {
             sections.insert(styledSection(from: sourceSection, text: first, sourceRange: NSRange(location: 0, length: selectedRange.location), id: firstSectionID), at: index)
             insertedSectionIDs.append(firstSectionID)
         }
 
-        if !middle.isEmpty {
-            let middleSectionID = UUID()
+        if let middleSectionID {
             sections.insert(styledSection(from: sourceSection, text: middle, sourceRange: selectedRange, id: middleSectionID), at: index + insertedSectionIDs.count)
             insertedSectionIDs.append(middleSectionID)
         }
 
-        if !second.isEmpty {
-            let secondSectionID = UUID()
+        if let secondSectionID {
             sections.insert(styledSection(from: sourceSection, text: second, sourceRange: NSRange(location: selectedRange.location + selectedRange.length, length: nsText.length - (selectedRange.location + selectedRange.length)), id: secondSectionID), at: index + insertedSectionIDs.count)
             insertedSectionIDs.append(secondSectionID)
         }
+
+        seedSplitHeights(
+            originalHeight: originalHeight,
+            firstID: firstSectionID,
+            firstLength: first.count,
+            middleID: middleSectionID,
+            middleLength: middle.count,
+            secondID: secondSectionID,
+            secondLength: second.count
+        )
 
         if let newActiveSectionID = insertedSectionIDs.first(where: { sectionID in
             sections.first(where: { $0.id == sectionID })?.text == middle
@@ -2493,6 +2519,35 @@ struct ProjectDetailView: View {
             activeSectionID = newActiveSectionID
         } else {
             activeSectionID = sections.first?.id
+        }
+    }
+
+    private func seedSplitHeights(
+        originalHeight: CGFloat,
+        firstID: UUID?,
+        firstLength: Int,
+        middleID: UUID?,
+        middleLength: Int,
+        secondID: UUID?,
+        secondLength: Int
+    ) {
+        guard originalHeight > 0 else { return }
+        let totalLength = firstLength + middleLength + secondLength
+        guard totalLength > 0 else { return }
+
+        let pieces: [(UUID?, Int)] = [
+            (firstID, firstLength),
+            (middleID, middleLength),
+            (secondID, secondLength)
+        ].filter { $0.0 != nil }
+
+        let presentLength = pieces.reduce(0) { $0 + $1.1 }
+        guard presentLength > 0 else { return }
+
+        for (id, length) in pieces {
+            guard let id else { continue }
+            let fraction = CGFloat(length) / CGFloat(presentLength)
+            sectionHeights[id] = max(originalHeight * fraction, 60)
         }
     }
 
@@ -3209,6 +3264,16 @@ struct ProjectDetailView: View {
             case .green: return "green"
             case .pink: return "magenta"
             case .blue: return "blue"
+            }
+        }
+
+        var docxShadingFillHex: String {
+            switch self {
+            case .yellow: return "FFF59D"
+            case .orange: return "FFCC80"
+            case .green: return "C5E1A5"
+            case .pink: return "F8BBD0"
+            case .blue: return "B3E5FC"
             }
         }
     }
@@ -4287,14 +4352,14 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
         if (state.bold || state.italic || state.underline || state.strikethrough || state.color != nil || state.highlight != nil || state.fontType != nil || state.fontSize != nil || superscript || subscript_
         ) {
             xml += "<w:rPr>"
+            if let fontType = state.fontType {
+                xml += "<w:rFonts w:ascii=\"\(fontType.docxFontName)\" w:hAnsi=\"\(fontType.docxFontName)\" w:cs=\"\(fontType.docxFontName)\"/>"
+            }
             if state.bold {
                 xml += "<w:b/>"
             }
             if state.italic {
                 xml += "<w:i/>"
-            }
-            if state.underline {
-                xml += "<w:u w:val=\"single\"/>"
             }
             if state.strikethrough {
                 xml += "<w:strike/>"
@@ -4302,15 +4367,18 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
             if let color = state.color {
                 xml += "<w:color w:val=\"\(color.docxHexValue)\"/>"
             }
-            if let highlight = state.highlight {
-                xml += "<w:highlight w:val=\"\(highlight.docxValue)\"/>"
-            }
-            if let fontType = state.fontType {
-                xml += "<w:rFonts w:ascii=\"\(fontType.docxFontName)\" w:hAnsi=\"\(fontType.docxFontName)\" w:cs=\"\(fontType.docxFontName)\"/>"
-            }
             if let fontSize = state.fontSize {
                 let halfPoints = Int((fontSize * 2).rounded())
                 xml += "<w:sz w:val=\"\(halfPoints)\"/><w:szCs w:val=\"\(halfPoints)\"/>"
+            }
+            if let highlight = state.highlight {
+                xml += "<w:highlight w:val=\"\(highlight.docxValue)\"/>"
+            }
+            if state.underline {
+                xml += "<w:u w:val=\"single\"/>"
+            }
+            if let highlight = state.highlight {
+                xml += "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"\(highlight.docxShadingFillHex)\"/>"
             }
             if superscript {
                 xml += "<w:vertAlign w:val=\"superscript\"/>"
