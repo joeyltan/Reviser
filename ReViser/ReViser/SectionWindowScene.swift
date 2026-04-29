@@ -12,13 +12,9 @@ struct SectionWindowScene: View {
     @State private var noteDraft: String = ""
     @State private var editingNoteIndices: Set<Int> = []
     @State private var revealedNoteActionIndex: Int? = nil
-    @State private var showSectionNumberInTitle: Bool = false
 
     private var sectionTitle: String {
-        guard showSectionNumberInTitle, let sectionNumber = sectionNumber else {
-            return "Section"
-        }
-
+        guard let sectionNumber = sectionNumber else { return "Section" }
         return "Section \(sectionNumber)"
     }
 
@@ -35,6 +31,16 @@ struct SectionWindowScene: View {
         GeometryReader { proxy in
             VStack(alignment: .leading, spacing: 12) {
                 if let binding = sectionBinding(), let currentSection = currentSection() {
+
+                    if let sectionNumber {
+                        Text("\(sectionNumber)")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, height: 50)
+                            .background(Circle().fill(Color.secondary.opacity(0.12)))
+                            .overlay(Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+                    }
 
                     TextKitView(
                         text: binding,
@@ -282,9 +288,6 @@ struct SectionWindowScene: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .navigationTitle(sectionTitle)
-        .onAppear {
-            showSectionNumberInTitle = model.showSectionNumbersInWindows
-        }
         .onChange(of: model.noteMode) { _, isOn in
             if !isOn {
                 showNoteOptions = false

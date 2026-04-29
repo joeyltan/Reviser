@@ -62,6 +62,8 @@ struct ProjectDetailView: View {
     @State private var pendingSectionDeletion: SectionDeletionAction? = nil
     @State private var openingAllSectionWindows: Bool = false
     @State private var allSectionWindowsVisible: Bool = false
+    @State private var showingSectionWindowPickerSheet: Bool = false
+    @State private var sectionWindowSelection: Set<UUID> = []
     @State private var sectionTags: [UUID: Set<String>] = [:]
     @State private var taggedTextBySection: [UUID: [String: Set<String>]] = [:]
     @State private var customTagCategories: Set<String> = []
@@ -258,6 +260,19 @@ struct ProjectDetailView: View {
                     contentType: UTType(filenameExtension: "docx")!,
                     defaultFilename: "\(project.title)-restitched.docx"
                 ) { _ in }
+                .sheet(isPresented: parent.$showingSectionWindowPickerSheet) {
+                    SectionWindowPickerSheet(
+                        sections: parent.sections,
+                        selection: parent.$sectionWindowSelection,
+                        onCancel: {
+                            parent.showingSectionWindowPickerSheet = false
+                        },
+                        onConfirm: { selectedIDs in
+                            parent.showingSectionWindowPickerSheet = false
+                            parent.openSectionsInWindows(ids: selectedIDs)
+                        }
+                    )
+                }
         }
     }
 
@@ -434,7 +449,7 @@ struct ProjectDetailView: View {
                         .foregroundColor((openingAllSectionWindows || allSectionWindowsVisible) ? .blue : .gray)
                 }
                 .disabled(openingAllSectionWindows || sections.isEmpty)
-                .help(allSectionWindowsVisible ? "Close all section windows" : "Open all sections in ordered windows")
+                .help(allSectionWindowsVisible ? "Close all section windows" : "Open sections as individual windows")
 
                 Button {
                     showingRestitchedManuscript.toggle()
@@ -3002,27 +3017,38 @@ struct ProjectDetailView: View {
     func openAllSectionsInWindows() {
         guard !sections.isEmpty, !openingAllSectionWindows else { return }
 
-        openingAllSectionWindows = true
-
-        Task { @MainActor in
-            if allSectionWindowsVisible {
+        if allSectionWindowsVisible {
+            openingAllSectionWindows = true
+            Task { @MainActor in
                 dismissWindow(id: "section-window")
                 model.showSectionNumbersInWindows = false
                 model.elevateSectionWindowsForBulkOpen = false
                 allSectionWindowsVisible = false
                 openingAllSectionWindows = false
-                return
             }
+            return
+        }
 
+        sectionWindowSelection = []
+        showingSectionWindowPickerSheet = true
+    }
+
+    func openSectionsInWindows(ids: Set<UUID>) {
+        guard !openingAllSectionWindows else { return }
+        let orderedIDs = sections.map(\.id).filter { ids.contains($0) }
+        guard !orderedIDs.isEmpty else { return }
+
+        openingAllSectionWindows = true
+
+        Task { @MainActor in
             model.showSectionNumbersInWindows = true
             model.elevateSectionWindowsForBulkOpen = true
             dismissWindow(id: "section-window")
             try? await Task.sleep(nanoseconds: 500_000_000)
 
             let columns = 3
-            let sectionIDs = sections.map(\.id)
 
-            for (index, sectionID) in sectionIDs.enumerated() {
+            for (index, sectionID) in orderedIDs.enumerated() {
                 openWindow(id: "section-window", value: sectionID)
 
                 let isEndOfRow = ((index + 1) % columns == 0)
@@ -4400,6 +4426,79 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
+    }
+}
+
+struct SectionWindowPickerSheet: View {
+    let sections: [Section]
+    @Binding var selection: Set<UUID>
+    var onCancel: () -> Void
+    var onConfirm: (Set<UUID>) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                SwiftUI.Section {
+                    Toggle(isOn: Binding(
+                        get: { !sections.isEmpty && selection.count == sections.count },
+                        set: { newValue in
+                            selection = newValue ? Set(sections.map(\.id)) : []
+                        }
+                    )) {
+                        Text("Select All")
+                    }
+                }
+
+                SwiftUI.Section("Sections") {
+                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                        Button {
+                            if selection.contains(section.id) {
+                                selection.remove(section.id)
+                            } else {
+                                selection.insert(section.id)
+                            }
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: selection.contains(section.id) ? "checkmark.square.fill" : "square")
+                                    .foregroundStyle(selection.contains(section.id) ? Color.accentColor : Color.secondary)
+                                    .font(.system(size: 18))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Section \(index + 1)")
+                                        .font(.headline)
+                                    Text(sectionPreview(for: section))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.leading)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle("Open Sections in Windows")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Open Windows") {
+                        onConfirm(selection)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(selection.isEmpty)
+                }
+            }
+        }
+        .frame(minWidth: 720, idealWidth: 760, minHeight: 520, idealHeight: 640)
+    }
+
+    private func sectionPreview(for section: Section) -> String {
+        let trimmed = section.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "(Empty section)" }
+        return String(trimmed.prefix(160))
     }
 }
 
