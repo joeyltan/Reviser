@@ -34,9 +34,18 @@ struct SectionWindowScene: View {
     var body: some View {
         GeometryReader { proxy in
             VStack(alignment: .leading, spacing: 12) {
-                if let binding = sectionBinding() {
+                if let binding = sectionBinding(), let currentSection = currentSection() {
+
                     TextKitView(
                         text: binding,
+                        textColors: currentSection.colors,
+                        textHighlights: currentSection.highlights,
+                        textFontTypes: currentSection.fontTypes,
+                        textFontSizes: currentSection.fontSizes,
+                        textBoldStyles: currentSection.boldStyles,
+                        textItalicStyles: currentSection.italicStyles,
+                        textUnderlineStyles: currentSection.underlineStyles,
+                        textStrikethroughStyles: currentSection.strikethroughStyles,
                         splitMode: false,
                         snappedY: .constant(0),
                         onSplit: { _ in },
@@ -286,6 +295,15 @@ struct SectionWindowScene: View {
                 revealedNoteActionIndex = nil
             }
         }
+    }
+
+    private func currentSection() -> Section? {
+        guard let projectIndex = model.projects.firstIndex(where: { $0.sections.contains(where: { $0.id == sectionID }) }),
+              let sectionIndex = model.projects[projectIndex].sections.firstIndex(where: { $0.id == sectionID }) else {
+            return nil
+        }
+
+        return model.projects[projectIndex].sections[sectionIndex]
     }
 
     private func sectionBinding() -> Binding<String>? {

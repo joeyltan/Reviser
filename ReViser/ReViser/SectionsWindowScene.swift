@@ -33,6 +33,7 @@ struct SectionsWindowScene: View {
     @State private var currentProjectID: UUID?
     @State private var savedSectionOrder: [UUID] = []
     @State private var hasPendingReorder: Bool = false
+    @State private var pendingTextSyncTask: Task<Void, Never>?
     @State private var overviewOrder: SectionsOverviewOrder = .row
     
     var body: some View {
@@ -86,8 +87,21 @@ struct SectionsWindowScene: View {
         }
         .onDisappear {
             model.isSectionsWindowOpen = false
+            pendingTextSyncTask?.cancel()
+            pendingTextSyncTask = nil
         }
         .onChange(of: sections) { _, newSections in
+            guard let projectID = currentProjectID,
+                  let currentProject = model.projects.first(where: { $0.id == projectID }) else { return }
+
+            if newSections == currentProject.sections {
+                pendingTextSyncTask?.cancel()
+            } else if isSectionOrderChange(newSections, comparedTo: currentProject.sections) {
+                pendingTextSyncTask?.cancel()
+                model.updateProjectSections(id: projectID, sections: newSections)
+            } else {
+                scheduleTextSync(for: projectID, sections: newSections)
+            }
             hasPendingReorder = sections.map(\.id) != savedSectionOrder
         }
     }
@@ -111,9 +125,26 @@ struct SectionsWindowScene: View {
         savedSectionOrder = sections.map(\.id)
         hasPendingReorder = false
     }
+
+    private func scheduleTextSync(for projectID: UUID, sections newSections: [Section]) {
+        pendingTextSyncTask?.cancel()
+        pendingTextSyncTask = Task { @MainActor in
+            defer { pendingTextSyncTask = nil }
+
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            model.updateProjectSections(id: projectID, sections: newSections)
+        }
+    }
+
+    private func isSectionOrderChange(_ newSections: [Section], comparedTo currentSections: [Section]) -> Bool {
+        newSections.map(\.id) != currentSections.map(\.id)
+    }
     
     private func saveCurrentOrder() {
         guard let projectID = currentProjectID else { return }
+        pendingTextSyncTask?.cancel()
+        pendingTextSyncTask = nil
         model.updateProjectSections(id: projectID, sections: sections)
         savedSectionOrder = sections.map(\.id)
         hasPendingReorder = false
@@ -252,97 +283,89 @@ struct SectionsOverviewCard: View {
     let onToggleExpand: () -> Void
     let onDragStart: () -> NSItemProvider
 
-    private let collapsedEditorHeight: CGFloat = 104
     private let collapsedCardHeight: CGFloat = 190
+    @State private var calculatedHeight: CGFloat = 120
 
     var body: some View {
-        GeometryReader { proxy in
-            let contentWidth = max(proxy.size.width - 24, 240)
-            let editorHeight = isExpanded ? estimatedEditorHeight(for: section.text, width: contentWidth) : collapsedEditorHeight
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Spacer()
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Spacer()
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "circle.grid.3x3.fill")
-                            .font(.system(size: 24, weight: .semibold))
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .fill(Color.secondary.opacity(0.12))
-                    )
-                    .contentShape(Capsule())
-                    .onDrag {
-                        onDragStart()
-                    }
-                    .help("Drag to redorder")
-
-                    Spacer()
-
-                    // todo: maybe change this so that more than one seciton can be fully expanded at a time
-                    Button {
-                        onToggleExpand()
-                    } label: {
-                        Image(systemName: isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .help(isExpanded ? "Collapse section" : "Expand section")
+                HStack(spacing: 6) {
+                    Image(systemName: "circle.grid.3x3.fill")
+                        .font(.system(size: 24, weight: .semibold))
                 }
-
-                HStack {
-                    Text("\(index + 1)")
-                        .font(.title2)
-                        .foregroundStyle(.primary)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            Circle().fill(Color.secondary.opacity(0.12))
-                        )
-                        .overlay(
-                            Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                        )
-                    Spacer()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.12))
+                )
+                .contentShape(Capsule())
+                .onDrag {
+                    onDragStart()
                 }
+                .help("Drag to redorder")
 
-                TextEditor(text: $section.text)
-                    .font(.system(size: 25))
-                    .frame(height: editorHeight)
-                    .scrollContentBackground(.hidden)
+                Spacer()
+
+                Button {
+                    onToggleExpand()
+                } label: {
+                    Image(systemName: isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.bordered)
+                .help(isExpanded ? "Collapse section" : "Expand section")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemBackground))
+
+            HStack {
+                Text("\(index + 1)")
+                    .font(.title2)
+                    .foregroundStyle(.primary)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .frame(width: 50, height: 50)
+                    .background(
+                        Circle().fill(Color.secondary.opacity(0.12))
+                    )
+                    .overlay(
+                        Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                    )
+                Spacer()
+            }
+
+            TextKitView(
+                text: $section.text,
+                textColors: section.colors,
+                textHighlights: section.highlights,
+                textFontTypes: section.fontTypes,
+                textFontSizes: section.fontSizes,
+                textBoldStyles: section.boldStyles,
+                textItalicStyles: section.italicStyles,
+                textUnderlineStyles: section.underlineStyles,
+                textStrikethroughStyles: section.strikethroughStyles,
+                splitMode: false,
+                snappedY: .constant(0),
+                onSplit: { _ in },
+                onAttach: { _ in },
+                onSelectionChange: { _, _ in },
+                calculatedHeight: $calculatedHeight
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
+            .frame(height: isExpanded ? calculatedHeight : 84)
+            .clipped()
         }
-        .frame(height: isExpanded ? expandedCardHeight(for: section.text, width: 360) : collapsedCardHeight)
-    }
-
-    private func estimatedEditorHeight(for text: String, width: CGFloat) -> CGFloat {
-        let displayText = text.isEmpty ? " " : text
-        let font = UIFont.systemFont(ofSize: 25)
-        let rect = (displayText as NSString).boundingRect(
-            with: CGSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font],
-            context: nil
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.secondarySystemBackground))
         )
-        return max(collapsedEditorHeight, ceil(rect.height) + 24)
-    }
-
-    private func expandedCardHeight(for text: String, width: CGFloat) -> CGFloat {
-        estimatedEditorHeight(for: text, width: width) + 96
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+        )
+        .frame(height: isExpanded ? max(collapsedCardHeight, calculatedHeight + 96) : collapsedCardHeight)
     }
 }
 
@@ -372,11 +395,5 @@ struct SectionReorderDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         draggedSectionID = nil
         return true
-    }
-
-    func dropExited(info: DropInfo) {
-        if !info.hasItemsConforming(to: [UTType.sectionReorder]) {
-            draggedSectionID = nil
-        }
     }
 }

@@ -3630,39 +3630,6 @@ struct ProjectDetailView: View {
 
 }
 
-
-struct SectionWindowsView: View {
-    @Binding var sections: [Section]
-    @Binding var sectionHeights: [UUID: CGFloat]
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 420), spacing: 24)], spacing: 24) {
-                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-                        SectionWindowCard(index: index, section: binding(for: section))
-                    }
-                }
-                .padding(24)
-            }
-            .navigationTitle("Sections")
-        }
-    }
-
-    private func binding(for section: Section) -> Binding<Section> {
-        Binding<Section>(
-            get: {
-                sections.first(where: { $0.id == section.id }) ?? section
-            },
-            set: { newValue in
-                if let i = sections.firstIndex(where: { $0.id == section.id }) {
-                    sections[i] = newValue
-                }
-            }
-        )
-    }
-}
-
 struct SectionWindowCard: View {
     let index: Int
     @Binding var section: Section

@@ -570,10 +570,8 @@ struct GraveyardWindowScene: View {
                     List {
                         ForEach(projectGraveyardItems) { item in
                             VStack(alignment: .leading, spacing: 10) {
-
-                                Text(item.section.text.isEmpty ? "(Empty section)" : String(item.section.text.prefix(600)))
-                                    .font(.headline)
-                                    .foregroundStyle(.secondary)
+                                Text(SectionAttributedText.attributedString(for: item.section, limit: 600, baseFontSize: 17))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
 
                                 HStack(spacing: 10) {
                                     Button("View") {
@@ -639,8 +637,7 @@ struct GraveyardSectionDetailView: View {
                     // Text(item.projectTitle)
                     //     .font(.headline)
 
-                    Text(item.section.text.isEmpty ? "(Empty section)" : item.section.text)
-                        .font(.body)
+                    Text(SectionAttributedText.attributedString(for: item.section, baseFontSize: 18))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                         .padding(16)
