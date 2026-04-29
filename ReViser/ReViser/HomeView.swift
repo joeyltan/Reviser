@@ -135,14 +135,33 @@ enum DraftComparisonMode: String, CaseIterable, Identifiable {
     }
 }
 
+struct DraftCompareSlot: Identifiable, Equatable {
+    let id: UUID = UUID()
+    var projectID: UUID? = nil
+    var mode: DraftComparisonMode = .sectioned
+}
+
+extension VerticalAlignment {
+    private struct DraftDocumentTopID: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat {
+            context[.top]
+        }
+    }
+    static let draftDocumentTop = VerticalAlignment(DraftDocumentTopID.self)
+}
+
 struct CompareDraftsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var leftProjectID: UUID?
-    @State private var rightProjectID: UUID?
-    @State private var leftMode: DraftComparisonMode = .sectioned
-    @State private var rightMode: DraftComparisonMode = .unsectioned
+    @State private var draftSlots: [DraftCompareSlot] = [
+        DraftCompareSlot(mode: .sectioned),
+        DraftCompareSlot(mode: .unsectioned)
+    ]
     @State private var showDraftDiff: Bool = true
+
+    private let columnSpacing: CGFloat = 24
+    private let outerPadding: CGFloat = 24
+    private let minColumnWidth: CGFloat = 360
 
     var body: some View {
         NavigationStack {
@@ -151,33 +170,39 @@ struct CompareDraftsView: View {
                     ContentUnavailableView(
                         "No Projects",
                         systemImage: "doc.on.doc",
-                        description: Text("Import two projects to compare drafts.")
+                        description: Text("Import projects to compare drafts.")
                     )
                 } else {
                     GeometryReader { proxy in
-                        let sideWidth = max(320, (proxy.size.width - 72) / 2)
+                        let columnCount = max(draftSlots.count, 1)
+                        let availableWidth = max(proxy.size.width - outerPadding * 2, minColumnWidth)
+                        let widthPerColumn = (availableWidth - CGFloat(columnCount - 1) * columnSpacing - 80) / CGFloat(columnCount)
+                        let sideWidth = max(minColumnWidth, widthPerColumn)
+                        let baselineSlot = draftSlots.first
 
                         ScrollView(.horizontal) {
-                            HStack(alignment: .top, spacing: 24) {
-                                compareColumn(
-                                    title: "Left Draft",
-                                    projectID: leftProjectID,
-                                    mode: $leftMode,
-                                    width: sideWidth,
-                                    onChooseProject: { leftProjectID = $0 }
-                                )
+                            HStack(alignment: .draftDocumentTop, spacing: columnSpacing) {
+                                ForEach(Array(draftSlots.enumerated()), id: \.element.id) { index, _ in
+                                    let slotBinding = Binding<DraftCompareSlot>(
+                                        get: { draftSlots[index] },
+                                        set: { draftSlots[index] = $0 }
+                                    )
+                                    let isBaseline = index == 0
+                                    compareColumn(
+                                        title: isBaseline ? "Baseline Draft" : "Draft \(index)",
+                                        slot: slotBinding,
+                                        width: sideWidth,
+                                        isBaseline: isBaseline,
+                                        comparedAgainstSlot: isBaseline ? nil : baselineSlot,
+                                        onRemove: draftSlots.count > 2 ? {
+                                            removeSlot(at: index)
+                                        } : nil
+                                    )
+                                }
 
-                                compareColumn(
-                                    title: "Right Draft",
-                                    projectID: rightProjectID,
-                                    mode: $rightMode,
-                                    width: sideWidth,
-                                    comparedAgainstProjectID: leftProjectID,
-                                    comparedAgainstMode: leftMode,
-                                    onChooseProject: { rightProjectID = $0 }
-                                )
+                                addDraftButton
                             }
-                            .padding(24)
+                            .padding(outerPadding)
                         }
                         .scrollIndicators(.visible)
                     }
@@ -213,40 +238,85 @@ struct CompareDraftsView: View {
     private func initializeSelectionIfNeeded() {
         guard !model.projects.isEmpty else { return }
 
-        if leftProjectID == nil {
-            leftProjectID = model.projects.first?.id
+        for index in draftSlots.indices where draftSlots[index].projectID == nil {
+            let fallbackIndex = min(index, model.projects.count - 1)
+            draftSlots[index].projectID = model.projects[fallbackIndex].id
         }
+    }
 
-        if rightProjectID == nil {
-            rightProjectID = model.projects.dropFirst().first?.id ?? model.projects.first?.id
+    private func addDraftSlot() {
+        let nextProject = model.projects.first { project in
+            !draftSlots.contains(where: { $0.projectID == project.id })
+        } ?? model.projects.first
+        draftSlots.append(DraftCompareSlot(projectID: nextProject?.id, mode: .sectioned))
+    }
+
+    private func removeSlot(at index: Int) {
+        guard draftSlots.indices.contains(index), draftSlots.count > 2 else { return }
+        draftSlots.remove(at: index)
+    }
+
+    @ViewBuilder
+    private var addDraftButton: some View {
+        Button {
+            addDraftSlot()
+        } label: {
+            VStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 38))
+                    .foregroundStyle(.secondary)
+                Text("Add Draft")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 160)
+            .frame(minHeight: 500)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.thinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(.quaternary, style: StrokeStyle(lineWidth: 1, dash: [6]))
+            )
         }
+        .buttonStyle(.plain)
+        .help("Add another draft column to the comparison")
+        .padding(5)
+        .alignmentGuide(.draftDocumentTop) { d in d[.top] }
     }
 
     @ViewBuilder
     private func compareColumn(
         title: String,
-        projectID: UUID?,
-        mode: Binding<DraftComparisonMode>,
+        slot: Binding<DraftCompareSlot>,
         width: CGFloat,
-        comparedAgainstProjectID: UUID? = nil,
-        comparedAgainstMode: DraftComparisonMode? = nil,
-        onChooseProject: @escaping (UUID) -> Void
+        isBaseline: Bool,
+        comparedAgainstSlot: DraftCompareSlot?,
+        onRemove: (() -> Void)? = nil
     ) -> some View {
+        let projectID = slot.wrappedValue.projectID
+        let mode = slot.mode
+
         let selectedProject = projectID.flatMap { id in
             model.projects.first(where: { $0.id == id })
         }
 
         let selectedText = comparisonText(for: selectedProject, mode: mode.wrappedValue)
-        let comparedAgainstProject = comparedAgainstProjectID.flatMap { id in
+        let comparedAgainstProject = comparedAgainstSlot?.projectID.flatMap { id in
             model.projects.first(where: { $0.id == id })
         }
         let comparedAgainstText = comparedAgainstProject.map { baselineProject in
-            comparisonText(for: baselineProject, mode: comparedAgainstMode ?? mode.wrappedValue)
+            comparisonText(for: baselineProject, mode: comparedAgainstSlot?.mode ?? mode.wrappedValue)
         }
 
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
                     Text(selectedProject?.title ?? "Choose a project")
                         .font(.headline)
                 }
@@ -256,12 +326,21 @@ struct CompareDraftsView: View {
                 Menu {
                     ForEach(model.projects) { project in
                         Button(project.title) {
-                            onChooseProject(project.id)
+                            slot.wrappedValue.projectID = project.id
                         }
                     }
                 } label: {
                     Label("", systemImage: "document.viewfinder")
                     .help("Select a project to display")
+                }
+
+                if let onRemove {
+                    Button(role: .destructive, action: onRemove) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove this draft column")
                 }
             }
 
@@ -269,7 +348,7 @@ struct CompareDraftsView: View {
                 ForEach(DraftComparisonMode.allCases) { item in
                     if mode.wrappedValue == item {
                         Button {
-                            mode.wrappedValue = item
+                            slot.wrappedValue.mode = item
                         } label: {
                             Text(item.title)
                                 .font(.caption)
@@ -277,7 +356,7 @@ struct CompareDraftsView: View {
                         .buttonStyle(BorderedProminentButtonStyle())
                     } else {
                         Button {
-                            mode.wrappedValue = item
+                            slot.wrappedValue.mode = item
                         } label: {
                             Text(item.title)
                                 .font(.caption)
@@ -289,8 +368,8 @@ struct CompareDraftsView: View {
 
             ScrollView {
                 Group {
-                    if let selectedProject {
-                        if showDraftDiff, let comparedAgainstText, comparedAgainstProjectID != nil {
+                    if selectedProject != nil {
+                        if showDraftDiff, !isBaseline, let comparedAgainstText {
                             Text(diffAttributedText(from: comparedAgainstText, to: selectedText))
                         } else {
                             Text(verbatim: selectedText)
@@ -314,6 +393,7 @@ struct CompareDraftsView: View {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(.quaternary, lineWidth: 1)
             )
+            .alignmentGuide(.draftDocumentTop) { d in d[.top] }
         }
         .frame(width: width, alignment: .topLeading)
         .padding(5)
@@ -357,7 +437,8 @@ struct CompareDraftsView: View {
                 index += 1
             case .delete(let baseChunk):
                 if index + 1 < operations.count,
-                   case .insert(let targetChunk) = operations[index + 1] {
+                   case .insert(let targetChunk) = operations[index + 1],
+                   sentencesAreSimilar(baseChunk, targetChunk) {
                     appendWordLevelDiff(from: baseChunk, to: targetChunk, into: result)
                     index += 2
                 } else {
@@ -382,6 +463,24 @@ struct CompareDraftsView: View {
         }
 
         return AttributedString(result)
+    }
+
+    private func sentencesAreSimilar(_ a: String, _ b: String) -> Bool {
+        let aTokens = contentWordTokens(in: a)
+        let bTokens = contentWordTokens(in: b)
+        guard !aTokens.isEmpty, !bTokens.isEmpty else { return false }
+
+        let diff = bTokens.difference(from: aTokens)
+        let lcsLength = aTokens.count - diff.removals.count
+        let denominator = max(aTokens.count, bTokens.count)
+        guard denominator > 0 else { return false }
+        return Double(lcsLength) / Double(denominator) >= 0.4
+    }
+
+    private func contentWordTokens(in text: String) -> [String] {
+        text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map { String($0).lowercased() }
+            .filter { !$0.isEmpty }
     }
 
     private func appendWordLevelDiff(from baseText: String, to targetText: String, into attributedString: NSMutableAttributedString) {
