@@ -366,7 +366,7 @@ struct SectionFilterSheet: View {
                             selection = newValue ? Set(sections.map(\.id)) : []
                         }
                     )) {
-                        Label("Select All")
+                        Text("Select All")
                     }
                 }
 
