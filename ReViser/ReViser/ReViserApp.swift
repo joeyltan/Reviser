@@ -68,7 +68,7 @@ struct ReViserApp: App {
             SectionsWindowScene()
                 .environment(appModel)
         }
-        .defaultSize(CGSize(width: 2500, height: 1800))
+        .defaultSize(CGSize(width: 1800, height: 1050))
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 
@@ -89,17 +89,6 @@ struct ReViserApp: App {
         .windowStyle(.automatic)
         .windowResizability(.automatic)
 
-        ImmersiveSpace(id: appModel.immersiveSpaceID) {
-            ImmersiveView()
-                .environment(appModel)
-                .onAppear {
-                    appModel.immersiveSpaceState = .open
-                }
-                .onDisappear {
-                    appModel.immersiveSpaceState = .closed
-                }
-        }
-        .immersionStyle(selection: .constant(.full), in: .full)
     }
 }
 

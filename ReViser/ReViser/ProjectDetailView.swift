@@ -688,12 +688,12 @@ struct ProjectDetailView: View {
                     Button {
                         rejoinWithNextSection()
                     } label: {
-                        Label("Rejoin With Next Section", systemImage: "text.line.last.and.arrowtriangle.backward")
+                        Label("Rejoin With Next Section", systemImage: "arrow.trianglehead.merge")
                     }
                     .disabled(activeSectionID == nil || (activeSectionID != nil && (sections.firstIndex(where: { $0.id == activeSectionID! }) ?? (sections.count - 1)) >= sections.count - 1))
                     
                 } label: {
-                    Image(systemName: "apple.writing.tools")
+                    Image(systemName: "wand.and.sparkles")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 26, height: 26)
@@ -1646,7 +1646,6 @@ struct ProjectDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .help(tooltipText)
-                .offset(x: -36, y: 8)
             }
         }
 
@@ -1666,6 +1665,157 @@ struct ProjectDetailView: View {
             .map(\.text)
             .joined(separator: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func restitchedManuscriptAttributedString() -> AttributedString {
+        let renderedSections = sections.isEmpty ? [Section(id: UUID(), text: "(Empty project)")] : sections
+        let combined = NSMutableAttributedString()
+
+        for (index, section) in renderedSections.enumerated() {
+            let sectionAttributed = NSMutableAttributedString(string: section.text)
+            let fullRange = NSRange(location: 0, length: (section.text as NSString).length)
+            sectionAttributed.addAttributes([
+                .font: UIFont.systemFont(ofSize: 24),
+                .foregroundColor: UIColor.label
+            ], range: fullRange)
+
+            applyRestitchedInlineStyles(
+                to: sectionAttributed,
+                text: section.text,
+                colors: section.colors,
+                highlights: section.highlights,
+                fontTypes: section.fontTypes,
+                fontSizes: section.fontSizes,
+                boldStyles: section.boldStyles,
+                italicStyles: section.italicStyles,
+                underlineStyles: section.underlineStyles,
+                strikethroughStyles: section.strikethroughStyles
+            )
+
+            combined.append(sectionAttributed)
+
+            if index < renderedSections.count - 1 {
+                combined.append(NSAttributedString(string: "\n"))
+            }
+        }
+
+        if combined.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return AttributedString("(Empty project)")
+        }
+
+        return AttributedString(combined)
+    }
+
+    private func applyRestitchedInlineStyles(
+        to attributed: NSMutableAttributedString,
+        text: String,
+        colors: [TextStyleRange],
+        highlights: [TextStyleRange],
+        fontTypes: [TextStyleRange],
+        fontSizes: [TextStyleRange],
+        boldStyles: [TextStyleRange],
+        italicStyles: [TextStyleRange],
+        underlineStyles: [TextStyleRange],
+        strikethroughStyles: [TextStyleRange]
+    ) {
+        applyRestitchedColorStyles(to: attributed, text: text, colors: colors)
+        applyRestitchedHighlightStyles(to: attributed, text: text, highlights: highlights)
+        applyRestitchedFontTypeStyles(to: attributed, text: text, fontTypes: fontTypes)
+        applyRestitchedFontSizeStyles(to: attributed, text: text, fontSizes: fontSizes)
+        applyRestitchedFontTraitStyles(to: attributed, text: text, ranges: boldStyles, trait: .traitBold)
+        applyRestitchedFontTraitStyles(to: attributed, text: text, ranges: italicStyles, trait: .traitItalic)
+        
+
+        let textLength = (text as NSString).length
+
+        for range in underlineStyles {
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
+        }
+
+        for range in strikethroughStyles {
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
+        }
+    }
+
+    private func applyRestitchedColorStyles(to attributed: NSMutableAttributedString, text: String, colors: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in colors {
+            guard let style = ProjectDetailView.TextColorStyle(rawValue: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.foregroundColor, value: style.uiColor, range: nsRange)
+        }
+    }
+
+    private func applyRestitchedHighlightStyles(to attributed: NSMutableAttributedString, text: String, highlights: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in highlights {
+            guard let style = ProjectDetailView.TextHighlightStyle(rawValue: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.backgroundColor, value: style.uiColor, range: nsRange)
+        }
+    }
+
+    private func applyRestitchedFontTypeStyles(to attributed: NSMutableAttributedString, text: String, fontTypes: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in fontTypes {
+            guard let style = ProjectDetailView.TextFontTypeStyle(rawValue: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+
+            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 24)
+            let font: UIFont
+            if let design = style.uiKitDesign,
+               let designedDescriptor = existingFont.fontDescriptor.withDesign(design) {
+                font = UIFont(descriptor: designedDescriptor, size: existingFont.pointSize)
+            } else {
+                font = UIFont.systemFont(ofSize: existingFont.pointSize)
+            }
+
+            attributed.addAttribute(.font, value: font, range: nsRange)
+        }
+    }
+
+    private func applyRestitchedFontSizeStyles(to attributed: NSMutableAttributedString, text: String, fontSizes: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in fontSizes {
+            guard let pointSize = ProjectDetailView.TextFontSizeStyle.pointSize(for: range.style) else { continue }
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+
+            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 24)
+            attributed.addAttribute(.font, value: existingFont.withSize(pointSize), range: nsRange)
+        }
+    }
+
+    private func applyRestitchedFontTraitStyles(
+        to attributed: NSMutableAttributedString,
+        text: String,
+        ranges: [TextStyleRange],
+        trait: UIFontDescriptor.SymbolicTraits
+    ) {
+        let textLength = (text as NSString).length
+
+        for range in ranges {
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+
+            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 24)
+            let combinedTraits = existingFont.fontDescriptor.symbolicTraits.union(trait)
+            if let descriptor = existingFont.fontDescriptor.withSymbolicTraits(combinedTraits) {
+                let font = UIFont(descriptor: descriptor, size: existingFont.pointSize)
+                attributed.addAttribute(.font, value: font, range: nsRange)
+            }
+        }
     }
 
     private func restitchedSectionTexts() -> [String] {
@@ -1696,7 +1846,7 @@ struct ProjectDetailView: View {
                     // }
 
                     Button {
-                        restitchedDocxDocument = RestitchedManuscriptDocxDocument(text: restitchedManuscriptText())
+                        restitchedDocxDocument = RestitchedManuscriptDocxDocument(sections: sections)
                         showingRestitchedDocxExport = true
                     } label: {
                         Label("Export as DOCX", systemImage: "doc.text")
@@ -1714,8 +1864,8 @@ struct ProjectDetailView: View {
             }
 
             ScrollView {
-                let manuscriptText = restitchedManuscriptText()
-                if manuscriptText.isEmpty {
+                let manuscriptAttributedText = restitchedManuscriptAttributedString()
+                if manuscriptAttributedText.characters.isEmpty {
                     Text("(Empty project)")
                         .font(.system(size: 24))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1726,8 +1876,7 @@ struct ProjectDetailView: View {
                                 .fill(Color(.secondarySystemBackground))
                         )
                 } else {
-                    Text(LocalizedStringKey(manuscriptText))
-                        .font(.system(size: 24))
+                    Text(manuscriptAttributedText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                         .padding(24)
@@ -1744,22 +1893,52 @@ struct ProjectDetailView: View {
     @ViewBuilder
     func sectionView(section: Section, index: Int) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            reorderHandleView(for: section)
+            let sectionLevelTags = sectionLevelTags(for: section.id)
+            let textLevelTags = textLevelTags(for: section.id)
+            let textTaggedSnippets = Set(taggedTextBySection[section.id]?.keys.map { $0 } ?? [])
+            let hasSectionTags = !sectionLevelTags.isEmpty
+            let hasTextTags = !textLevelTags.isEmpty
+            let hasTags = hasSectionTags || hasTextTags
+            let tooltipText = [
+                hasSectionTags ? "Section tags: \(sectionLevelTags.sorted().joined(separator: ", "))" : nil,
+                hasTextTags ? "Text tags: \(textLevelTags.sorted().joined(separator: ", "))" : nil
+            ]
+                .compactMap { $0 }
+                .joined(separator: "\n")
+
+            VStack(alignment: .center, spacing: 8) {
+                reorderHandleView(for: section)
+
+                if hasTags {
+                    Button {
+                        presentTagActions(for: section.id)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if hasSectionTags {
+                                Image(systemName: "tag.fill")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.blue)
+                            }
+
+                            if hasTextTags {
+                                Image(systemName: "text.badge.checkmark")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.secondary.opacity(0.12))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(tooltipText)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 12) {
-                let sectionLevelTags = sectionLevelTags(for: section.id)
-                let textLevelTags = textLevelTags(for: section.id)
-                let textTaggedSnippets = Set(taggedTextBySection[section.id]?.keys.map { $0 } ?? [])
-                let hasSectionTags = !sectionLevelTags.isEmpty
-                let hasTextTags = !textLevelTags.isEmpty
-                let hasTags = hasSectionTags || hasTextTags
-                let tooltipText = [
-                    hasSectionTags ? "Section tags: \(sectionLevelTags.sorted().joined(separator: ", "))" : nil,
-                    hasTextTags ? "Text tags: \(textLevelTags.sorted().joined(separator: ", "))" : nil
-                ]
-                    .compactMap { $0 }
-                    .joined(separator: "\n")
-
                 TextKitView(
                     text: binding(for: section),
                     highlightedSnippets: textTaggedSnippets,
@@ -1767,6 +1946,10 @@ struct ProjectDetailView: View {
                     textHighlights: section.highlights,
                     textFontTypes: section.fontTypes,
                     textFontSizes: section.fontSizes,
+                    textBoldStyles: section.boldStyles,
+                    textItalicStyles: section.italicStyles,
+                    textUnderlineStyles: section.underlineStyles,
+                    textStrikethroughStyles: section.strikethroughStyles,
                     splitMode: splitMode,
                     snappedY: $snappedY,
                     onSplit: { y in
@@ -1791,36 +1974,6 @@ struct ProjectDetailView: View {
                 .multilineTextAlignment(.leading)
                 .frame(height: sectionHeights[section.id] ?? 100)
                 .frame(maxWidth: .infinity)
-                .overlay(alignment: .topLeading) {
-                    if hasTags {
-                        Button {
-                            presentTagActions(for: section.id)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                if hasSectionTags {
-                                    Image(systemName: "tag.fill")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(.blue)
-                                }
-
-                                if hasTextTags {
-                                    Image(systemName: "text.badge.checkmark")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(.orange)
-                                }
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.secondary.opacity(0.12))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .help(tooltipText)
-                        .offset(x: -36, y: 8)
-                    }
-                }
 
                 if model.noteMode {
                     sectionNotesView(sectionID: section.id)
@@ -2238,6 +2391,8 @@ struct ProjectDetailView: View {
               let textView = textViews[id] else { return }
 
         let text = sections[index].text
+        let sourceSection = sections[index]
+        let nsText = text as NSString
         let lm = textView.layoutManager
 
         let insetTop = textView.textContainerInset.top
@@ -2264,26 +2419,26 @@ struct ProjectDetailView: View {
             glyphIndex = lineRange.location + lineRange.length
         }
 
-        let splitIdx = text.index(text.startIndex, offsetBy: charIndex)
+        let firstRange = NSRange(location: 0, length: charIndex)
+        let first = nsText.substring(with: firstRange)
 
-        let first = String(text[..<splitIdx])
-        var second = String(text[splitIdx...])
-        print("first", first)
-        print("second", second)
-
-        if second.hasPrefix("\n") {
-            second.removeFirst()
+        var secondStart = charIndex
+        if secondStart < nsText.length, nsText.substring(with: NSRange(location: secondStart, length: 1)) == "\n" {
+            secondStart += 1
         }
+
+        let secondRange = NSRange(location: secondStart, length: nsText.length - secondStart)
+        let second = nsText.substring(with: secondRange)
 
         // Replace section with two new ones
         sections.remove(at: index)
 
         if !first.isEmpty {
-            sections.insert(Section(id: UUID(), text: first), at: index)
+            sections.insert(styledSection(from: sourceSection, text: first, sourceRange: firstRange, id: UUID()), at: index)
         }
 
         if !second.isEmpty {
-            sections.insert(Section(id: UUID(), text: second), at: index + (first.isEmpty ? 0 : 1))
+            sections.insert(styledSection(from: sourceSection, text: second, sourceRange: secondRange, id: UUID()), at: index + (first.isEmpty ? 0 : 1))
         }
     }
 
@@ -2293,6 +2448,7 @@ struct ProjectDetailView: View {
               let textView = textViews[id] else { return }
 
         let text = sections[index].text
+        let sourceSection = sections[index]
         let nsText = text as NSString
         let selectedRange = clampSelectionRange(textView.selectedRange, textLength: nsText.length)
 
@@ -2315,19 +2471,19 @@ struct ProjectDetailView: View {
 
         if !first.isEmpty {
             let firstSectionID = UUID()
-            sections.insert(Section(id: firstSectionID, text: first), at: index)
+            sections.insert(styledSection(from: sourceSection, text: first, sourceRange: NSRange(location: 0, length: selectedRange.location), id: firstSectionID), at: index)
             insertedSectionIDs.append(firstSectionID)
         }
 
         if !middle.isEmpty {
             let middleSectionID = UUID()
-            sections.insert(Section(id: middleSectionID, text: middle), at: index + insertedSectionIDs.count)
+            sections.insert(styledSection(from: sourceSection, text: middle, sourceRange: selectedRange, id: middleSectionID), at: index + insertedSectionIDs.count)
             insertedSectionIDs.append(middleSectionID)
         }
 
         if !second.isEmpty {
             let secondSectionID = UUID()
-            sections.insert(Section(id: secondSectionID, text: second), at: index + insertedSectionIDs.count)
+            sections.insert(styledSection(from: sourceSection, text: second, sourceRange: NSRange(location: selectedRange.location + selectedRange.length, length: nsText.length - (selectedRange.location + selectedRange.length)), id: secondSectionID), at: index + insertedSectionIDs.count)
             insertedSectionIDs.append(secondSectionID)
         }
 
@@ -2353,25 +2509,36 @@ struct ProjectDetailView: View {
         var rebuiltSections: [Section] = []
 
         for section in currentSections {
-            let paragraphTexts = paragraphs(in: section.text)
+            let paragraphSlices = paragraphSlices(in: section.text)
 
-            if paragraphTexts.isEmpty {
+            if paragraphSlices.isEmpty {
                 rebuiltSections.append(Section(id: UUID(), text: ""))
                 continue
             }
 
-            for (paragraphIndex, paragraphText) in paragraphTexts.enumerated() {
+            for (paragraphIndex, paragraphSlice) in paragraphSlices.enumerated() {
                 let isPrimaryParagraph = paragraphIndex == 0
+                let paragraphSection = styledSection(
+                    from: section,
+                    text: paragraphSlice.text,
+                    sourceRange: paragraphSlice.range,
+                    id: UUID()
+                )
+
                 rebuiltSections.append(
                     Section(
-                        id: UUID(),
-                        text: paragraphText,
-                        notes: isPrimaryParagraph ? section.notes : [],
-                        resolvedNotes: isPrimaryParagraph ? section.resolvedNotes : [],
-                        colors: isPrimaryParagraph ? section.colors : [],
-                        highlights: isPrimaryParagraph ? section.highlights : [],
-                        fontTypes: isPrimaryParagraph ? section.fontTypes : [],
-                        fontSizes: isPrimaryParagraph ? section.fontSizes : []
+                        id: paragraphSection.id,
+                        text: paragraphSection.text,
+                        notes: isPrimaryParagraph ? paragraphSection.notes : [],
+                        resolvedNotes: isPrimaryParagraph ? paragraphSection.resolvedNotes : [],
+                        colors: paragraphSection.colors,
+                        highlights: paragraphSection.highlights,
+                        fontTypes: paragraphSection.fontTypes,
+                        fontSizes: paragraphSection.fontSizes,
+                        boldStyles: paragraphSection.boldStyles,
+                        italicStyles: paragraphSection.italicStyles,
+                        underlineStyles: paragraphSection.underlineStyles,
+                        strikethroughStyles: paragraphSection.strikethroughStyles
                     )
                 )
             }
@@ -2407,6 +2574,43 @@ struct ProjectDetailView: View {
         return ranges.map { TextStyleRange(location: $0.location + delta, length: $0.length, style: $0.style) }
     }
 
+    private func clippedRanges(_ ranges: [TextStyleRange], in sourceRange: NSRange) -> [TextStyleRange] {
+        let sourceStart = sourceRange.location
+        let sourceEnd = sourceRange.location + sourceRange.length
+
+        return ranges.compactMap { range in
+            let rangeStart = range.location
+            let rangeEnd = range.location + range.length
+            let clippedStart = max(rangeStart, sourceStart)
+            let clippedEnd = min(rangeEnd, sourceEnd)
+
+            guard clippedEnd > clippedStart else { return nil }
+
+            return TextStyleRange(
+                location: clippedStart - sourceStart,
+                length: clippedEnd - clippedStart,
+                style: range.style
+            )
+        }
+    }
+
+    private func styledSection(from section: Section, text: String, sourceRange: NSRange, id: UUID) -> Section {
+        Section(
+            id: id,
+            text: text,
+            notes: sourceRange.location == 0 ? section.notes : [],
+            resolvedNotes: sourceRange.location == 0 ? section.resolvedNotes : [],
+            colors: clippedRanges(section.colors, in: sourceRange),
+            highlights: clippedRanges(section.highlights, in: sourceRange),
+            fontTypes: clippedRanges(section.fontTypes, in: sourceRange),
+            fontSizes: clippedRanges(section.fontSizes, in: sourceRange),
+            boldStyles: clippedRanges(section.boldStyles, in: sourceRange),
+            italicStyles: clippedRanges(section.italicStyles, in: sourceRange),
+            underlineStyles: clippedRanges(section.underlineStyles, in: sourceRange),
+            strikethroughStyles: clippedRanges(section.strikethroughStyles, in: sourceRange)
+        )
+    }
+
     func rejoinWithNextSection() {
         guard let currentID = activeSectionID,
               let currentIndex = sections.firstIndex(where: { $0.id == currentID }),
@@ -2436,6 +2640,10 @@ struct ProjectDetailView: View {
         current.highlights.append(contentsOf: offsetRanges(next.highlights, by: joinOffset))
         current.fontTypes.append(contentsOf: offsetRanges(next.fontTypes, by: joinOffset))
         current.fontSizes.append(contentsOf: offsetRanges(next.fontSizes, by: joinOffset))
+        current.boldStyles.append(contentsOf: offsetRanges(next.boldStyles, by: joinOffset))
+        current.italicStyles.append(contentsOf: offsetRanges(next.italicStyles, by: joinOffset))
+        current.underlineStyles.append(contentsOf: offsetRanges(next.underlineStyles, by: joinOffset))
+        current.strikethroughStyles.append(contentsOf: offsetRanges(next.strikethroughStyles, by: joinOffset))
 
         // Apply merged current back into sections and remove next
         sections[currentIndex] = current
@@ -2530,6 +2738,63 @@ struct ProjectDetailView: View {
         }
 
         return paragraphs
+    }
+
+    private func paragraphSlices(in text: String) -> [(text: String, range: NSRange)] {
+        let nsText = text as NSString
+        var slices: [(text: String, range: NSRange)] = []
+        var currentParagraph = ""
+        var separatorRun = ""
+        var separatorStart: Int?
+        var paragraphStart: Int?
+        var hasParagraphContent = false
+        var index = 0
+
+        while index < nsText.length {
+            let lineRange = nsText.lineRange(for: NSRange(location: index, length: 0))
+            let lineText = nsText.substring(with: lineRange)
+            let isBlank = lineText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+            if isBlank {
+                if !hasParagraphContent && separatorStart == nil {
+                    separatorStart = lineRange.location
+                }
+                separatorRun += lineText
+            } else {
+                if !hasParagraphContent {
+                    paragraphStart = separatorStart ?? lineRange.location
+                    currentParagraph = separatorRun + lineText
+                    separatorRun = ""
+                    separatorStart = nil
+                    hasParagraphContent = true
+                } else if !separatorRun.isEmpty {
+                    if let start = paragraphStart {
+                        let length = (currentParagraph as NSString).length + (separatorRun as NSString).length
+                        slices.append((currentParagraph + separatorRun, NSRange(location: start, length: length)))
+                    }
+                    paragraphStart = lineRange.location
+                    currentParagraph = lineText
+                    separatorRun = ""
+                    separatorStart = nil
+                } else {
+                    currentParagraph += lineText
+                }
+            }
+
+            index = lineRange.location + lineRange.length
+        }
+
+        if hasParagraphContent {
+            if let start = paragraphStart {
+                let length = (currentParagraph as NSString).length + (separatorRun as NSString).length
+                slices.append((currentParagraph + separatorRun, NSRange(location: start, length: length)))
+            }
+        } else if !separatorRun.isEmpty {
+            let start = separatorStart ?? 0
+            slices.append((separatorRun, NSRange(location: start, length: (separatorRun as NSString).length)))
+        }
+
+        return slices
     }
 
     func undoLastProjectChange() {
@@ -2815,7 +3080,7 @@ struct ProjectDetailView: View {
         return String(preview.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
-    enum TextStyle {
+    enum TextStyle: String {
         case bold
         case italic
         case underline
@@ -2849,6 +3114,15 @@ struct ProjectDetailView: View {
             case .purple: return .systemPurple
             }
         }
+
+        var docxHexValue: String {
+            switch self {
+            case .red: return "FF3B30"
+            case .blue: return "0A84FF"
+            case .green: return "30D158"
+            case .purple: return "BF5AF2"
+            }
+        }
     }
 
     enum TextFontTypeStyle: String {
@@ -2872,6 +3146,15 @@ struct ProjectDetailView: View {
             case .serif: return .serif
             case .rounded: return .rounded
             case .monospaced: return .monospaced
+            }
+        }
+
+        var docxFontName: String {
+            switch self {
+            case .system: return "Aptos"
+            case .serif: return "Times New Roman"
+            case .rounded: return "Avenir Next Rounded"
+            case .monospaced: return "Courier New"
             }
         }
     }
@@ -2918,11 +3201,41 @@ struct ProjectDetailView: View {
             case .blue: return .systemBlue.withAlphaComponent(0.25)
             }
         }
+
+        var docxValue: String {
+            switch self {
+            case .yellow: return "yellow"
+            case .orange: return "darkYellow"
+            case .green: return "green"
+            case .pink: return "magenta"
+            case .blue: return "blue"
+            }
+        }
     }
 
     func applyStyle(_ style: TextStyle) {
-        let markers = style.markers
-        applyWrappedSelection(prefix: markers.prefix, suffix: markers.suffix)
+        guard let activeSectionID = activeSectionID,
+              let textView = textViews[activeSectionID],
+              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+
+        let selectedRange = textView.selectedRange
+        guard selectedRange.length > 0 else { return }
+
+        let nsText = sections[index].text as NSString
+        guard selectedRange.location + selectedRange.length <= nsText.length else { return }
+
+        captureUndoBeforeTextStyleChange()
+
+        switch style {
+        case .bold:
+            toggleTextStyleRange(selectedRange, in: &sections[index].boldStyles, style: style.rawValue)
+        case .italic:
+            toggleTextStyleRange(selectedRange, in: &sections[index].italicStyles, style: style.rawValue)
+        case .underline:
+            toggleTextStyleRange(selectedRange, in: &sections[index].underlineStyles, style: style.rawValue)
+        case .strikethrough:
+            toggleTextStyleRange(selectedRange, in: &sections[index].strikethroughStyles, style: style.rawValue)
+        }
     }
 
     func applyTextColor(_ color: TextColorStyle) {
@@ -3076,30 +3389,8 @@ struct ProjectDetailView: View {
         }
     }
 
-    private func applyWrappedSelection(prefix: String, suffix: String) {
-        guard let activeSectionID = activeSectionID,
-              let textView = textViews[activeSectionID],
-              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
-
-        let selectedRange = textView.selectedRange
-        let text = sections[index].text
-        let selectedText = (text as NSString).substring(with: selectedRange)
-
-        if selectedText.isEmpty {
-            return
-        }
-
-        let styledText = prefix + selectedText + suffix
-
-        // Replace selected text with styled version
-        sections[index].text = (text as NSString).replacingCharacters(in: selectedRange, with: styledText)
-
-        // Update the text view
-        textView.text = sections[index].text
-
-        // Move caret to after the styled text
-        let newPosition = selectedRange.location + styledText.count
-        textView.selectedRange = NSRange(location: newPosition, length: 0)
+    private func captureUndoBeforeTextStyleChange() {
+        captureUndoBeforeTagChange()
     }
 
     func toggleTagOnActiveSection(_ tag: String) {
@@ -3420,6 +3711,10 @@ struct TextKitView: UIViewRepresentable {
     var textHighlights: [TextStyleRange] = []
     var textFontTypes: [TextStyleRange] = []
     var textFontSizes: [TextStyleRange] = []
+    var textBoldStyles: [TextStyleRange] = []
+    var textItalicStyles: [TextStyleRange] = []
+    var textUnderlineStyles: [TextStyleRange] = []
+    var textStrikethroughStyles: [TextStyleRange] = []
     var splitMode: Bool
     @Binding var snappedY: CGFloat
     var onSplit: (CGFloat) -> Void
@@ -3492,6 +3787,10 @@ struct TextKitView: UIViewRepresentable {
 
         applyFontTypeStyles(to: attributed, text: text, fontTypes: textFontTypes)
         applyFontSizeStyles(to: attributed, text: text, fontSizes: textFontSizes)
+        applyBoldStyles(to: attributed, text: text, boldStyles: textBoldStyles)
+        applyItalicStyles(to: attributed, text: text, italicStyles: textItalicStyles)
+        applyUnderlineStyles(to: attributed, text: text, underlineStyles: textUnderlineStyles)
+        applyStrikethroughStyles(to: attributed, text: text, strikethroughStyles: textStrikethroughStyles)
         applyColorStyles(to: attributed, text: text, colors: textColors)
         applyHighlightStyles(to: attributed, text: text, highlights: textHighlights)
 
@@ -3574,6 +3873,50 @@ struct TextKitView: UIViewRepresentable {
         }
     }
 
+    private func applyBoldStyles(to attributed: NSMutableAttributedString, text: String, boldStyles: [TextStyleRange]) {
+        applyFontTraitStyles(to: attributed, text: text, ranges: boldStyles, trait: .traitBold)
+    }
+
+    private func applyItalicStyles(to attributed: NSMutableAttributedString, text: String, italicStyles: [TextStyleRange]) {
+        applyFontTraitStyles(to: attributed, text: text, ranges: italicStyles, trait: .traitItalic)
+    }
+
+    private func applyUnderlineStyles(to attributed: NSMutableAttributedString, text: String, underlineStyles: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in underlineStyles {
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
+        }
+    }
+
+    private func applyStrikethroughStyles(to attributed: NSMutableAttributedString, text: String, strikethroughStyles: [TextStyleRange]) {
+        let textLength = (text as NSString).length
+
+        for range in strikethroughStyles {
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+            attributed.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
+        }
+    }
+
+    private func applyFontTraitStyles(to attributed: NSMutableAttributedString, text: String, ranges: [TextStyleRange], trait: UIFontDescriptor.SymbolicTraits) {
+        let textLength = (text as NSString).length
+
+        for range in ranges {
+            let nsRange = range.nsRange
+            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
+
+            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 25)
+            let combinedTraits = existingFont.fontDescriptor.symbolicTraits.union(trait)
+            if let descriptor = existingFont.fontDescriptor.withSymbolicTraits(combinedTraits) {
+                let font = UIFont(descriptor: descriptor, size: existingFont.pointSize)
+                attributed.addAttribute(.font, value: font, range: nsRange)
+            }
+        }
+    }
+
     private func computeSnippetAnchorPoints(in textView: UITextView) -> [String: [CGPoint]] {
         guard !highlightedSnippets.isEmpty else { return [:] }
 
@@ -3640,8 +3983,12 @@ struct Section: Identifiable, Codable, Equatable {
     var highlights: [TextStyleRange] = []
     var fontTypes: [TextStyleRange] = []
     var fontSizes: [TextStyleRange] = []
+    var boldStyles: [TextStyleRange] = []
+    var italicStyles: [TextStyleRange] = []
+    var underlineStyles: [TextStyleRange] = []
+    var strikethroughStyles: [TextStyleRange] = []
 
-    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = [], colors: [TextStyleRange] = [], highlights: [TextStyleRange] = [], fontTypes: [TextStyleRange] = [], fontSizes: [TextStyleRange] = []) {
+    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = [], colors: [TextStyleRange] = [], highlights: [TextStyleRange] = [], fontTypes: [TextStyleRange] = [], fontSizes: [TextStyleRange] = [], boldStyles: [TextStyleRange] = [], italicStyles: [TextStyleRange] = [], underlineStyles: [TextStyleRange] = [], strikethroughStyles: [TextStyleRange] = []) {
         self.id = id
         self.text = text
         self.notes = notes
@@ -3650,6 +3997,10 @@ struct Section: Identifiable, Codable, Equatable {
         self.highlights = highlights
         self.fontTypes = fontTypes
         self.fontSizes = fontSizes
+        self.boldStyles = boldStyles
+        self.italicStyles = italicStyles
+        self.underlineStyles = underlineStyles
+        self.strikethroughStyles = strikethroughStyles
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3661,6 +4012,10 @@ struct Section: Identifiable, Codable, Equatable {
         case highlights
         case fontTypes
         case fontSizes
+        case boldStyles
+        case italicStyles
+        case underlineStyles
+        case strikethroughStyles
     }
 
     init(from decoder: Decoder) throws {
@@ -3673,6 +4028,10 @@ struct Section: Identifiable, Codable, Equatable {
         highlights = try container.decodeIfPresent([TextStyleRange].self, forKey: .highlights) ?? []
         fontTypes = try container.decodeIfPresent([TextStyleRange].self, forKey: .fontTypes) ?? []
         fontSizes = try container.decodeIfPresent([TextStyleRange].self, forKey: .fontSizes) ?? []
+        boldStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .boldStyles) ?? []
+        italicStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .italicStyles) ?? []
+        underlineStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .underlineStyles) ?? []
+        strikethroughStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .strikethroughStyles) ?? []
     }
 }
 
@@ -3750,19 +4109,19 @@ struct RestitchedManuscriptPDFDocument: FileDocument {
 struct RestitchedManuscriptDocxDocument: FileDocument {
     static var readableContentTypes: [UTType] { [UTType(filenameExtension: "docx")!] }
 
-    var sections: [String]
+    var sections: [Section]
 
     init(text: String = "") {
-        self.sections = text.isEmpty ? [] : [text]
+        self.sections = text.isEmpty ? [] : [Section(id: UUID(), text: text)]
     }
 
-    init(sections: [String]) {
+    init(sections: [Section]) {
         self.sections = sections
     }
 
     init(configuration: ReadConfiguration) throws {
         let text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
-        sections = text.isEmpty ? [] : [text]
+        sections = text.isEmpty ? [] : [Section(id: UUID(), text: text)]
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
@@ -3777,30 +4136,17 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
         return FileWrapper(regularFileWithContents: data)
     }
 
-    private static func writeDocxArchive(sections: [String], to url: URL) throws {
+    private static func writeDocxArchive(sections: [Section], to url: URL) throws {
         let archive = try Archive(url: url, accessMode: .create)
-        let paragraphs = sections.isEmpty ? ["(Empty project)"] : sections
+        let paragraphs = sections.isEmpty ? [Section(id: UUID(), text: "(Empty project)")] : sections
 
         let bodyXML = paragraphs.map { paragraph in
-            let cleaned = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = paragraph.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleaned.isEmpty {
                 return "<w:p/>"
             }
 
-            let runs = cleaned
-                .components(separatedBy: CharacterSet.newlines)
-                .enumerated()
-                .map { index, line in
-                    let formattedRuns = markdownToWordXML(line)
-                    if index == 0 {
-                        return formattedRuns
-                    } else {
-                        return "<w:r><w:br/></w:r>\(formattedRuns)"
-                    }
-                }
-                .joined()
-
-            return "<w:p>\(runs)</w:p>"
+            return styledParagraphXML(for: paragraph)
         }.joined(separator: "")
 
         let documentXML = """
@@ -3837,6 +4183,125 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
         try addArchiveEntry(archive, path: "word/document.xml", data: Data(documentXML.utf8))
     }
 
+    private static func styledParagraphXML(for section: Section) -> String {
+        let text = section.text
+        let nsText = text as NSString
+        guard nsText.length > 0 else { return "<w:p/>" }
+
+        var runs: [String] = []
+        var currentText = ""
+        var currentState = WordStyleState()
+
+        func flushCurrentText() {
+            guard !currentText.isEmpty else { return }
+            runs.append(
+                formatRun(
+                    currentText,
+                    state: currentState,
+                    superscript: false,
+                    subscript_: false
+                )
+            )
+            currentText = ""
+        }
+
+        for index in 0..<nsText.length {
+            let character = nsText.substring(with: NSRange(location: index, length: 1))
+
+            if character == "\n" || character == "\r" {
+                flushCurrentText()
+                if character == "\r", index + 1 < nsText.length {
+                    let nextCharacter = nsText.substring(with: NSRange(location: index + 1, length: 1))
+                    if nextCharacter == "\n" {
+                        continue
+                    }
+                }
+                runs.append("<w:r><w:br/></w:r>")
+                continue
+            }
+
+            let newState = WordStyleState(
+                bold: sectionHasStyle(section.boldStyles, at: index),
+                italic: sectionHasStyle(section.italicStyles, at: index),
+                underline: sectionHasStyle(section.underlineStyles, at: index),
+                strikethrough: sectionHasStyle(section.strikethroughStyles, at: index),
+                color: sectionColorStyle(section.colors, at: index),
+                highlight: sectionHighlightStyle(section.highlights, at: index),
+                fontType: sectionFontTypeStyle(section.fontTypes, at: index),
+                fontSize: sectionFontSizeStyle(section.fontSizes, at: index)
+            )
+
+            if currentText.isEmpty {
+                currentState = newState
+                currentText.append(character)
+            } else if newState == currentState {
+                currentText.append(character)
+            } else {
+                flushCurrentText()
+                currentState = newState
+                currentText.append(character)
+            }
+        }
+
+        flushCurrentText()
+        return "<w:p>\(runs.joined())</w:p>"
+    }
+
+    private static func sectionHasStyle(_ ranges: [TextStyleRange], at index: Int) -> Bool {
+        ranges.contains { index >= $0.location && index < $0.location + $0.length }
+    }
+
+    private static func sectionColorStyle(_ ranges: [TextStyleRange], at index: Int) -> ProjectDetailView.TextColorStyle? {
+        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
+        return ProjectDetailView.TextColorStyle(rawValue: range.style)
+    }
+
+    private static func sectionHighlightStyle(_ ranges: [TextStyleRange], at index: Int) -> ProjectDetailView.TextHighlightStyle? {
+        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
+        return ProjectDetailView.TextHighlightStyle(rawValue: range.style)
+    }
+
+    private static func sectionFontTypeStyle(_ ranges: [TextStyleRange], at index: Int) -> ProjectDetailView.TextFontTypeStyle? {
+        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
+        return ProjectDetailView.TextFontTypeStyle(rawValue: range.style)
+    }
+
+    private static func sectionFontSizeStyle(_ ranges: [TextStyleRange], at index: Int) -> CGFloat? {
+        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
+        return ProjectDetailView.TextFontSizeStyle.pointSize(for: range.style)
+    }
+
+    private struct WordStyleState: Equatable {
+        let bold: Bool
+        let italic: Bool
+        let underline: Bool
+        let strikethrough: Bool
+        let color: ProjectDetailView.TextColorStyle?
+        let highlight: ProjectDetailView.TextHighlightStyle?
+        let fontType: ProjectDetailView.TextFontTypeStyle?
+        let fontSize: CGFloat?
+
+        init(
+            bold: Bool = false,
+            italic: Bool = false,
+            underline: Bool = false,
+            strikethrough: Bool = false,
+            color: ProjectDetailView.TextColorStyle? = nil,
+            highlight: ProjectDetailView.TextHighlightStyle? = nil,
+            fontType: ProjectDetailView.TextFontTypeStyle? = nil,
+            fontSize: CGFloat? = nil
+        ) {
+            self.bold = bold
+            self.italic = italic
+            self.underline = underline
+            self.strikethrough = strikethrough
+            self.color = color
+            self.highlight = highlight
+            self.fontType = fontType
+            self.fontSize = fontSize
+        }
+    }
+
     private static func addArchiveEntry(_ archive: Archive, path: String, data: Data) throws {
         try archive.addEntry(
             with: path,
@@ -3848,124 +4313,37 @@ struct RestitchedManuscriptDocxDocument: FileDocument {
         }
     }
 
-    private static func markdownToWordXML(_ text: String) -> String {
-        var result = ""
-        var i = text.startIndex
-        var currentText = ""
-        var isBold = false
-        var isItalic = false
-        var isUnderline = false
-        var isStrikethrough = false
-        var isSuperscript = false
-        var isSubscript = false
-        
-        while i < text.endIndex {
-            
-            // Check for strikethrough (~~text~~)
-            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "~" && text[text.index(after: i)] == "~" {
-                if !currentText.isEmpty {
-                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-                    currentText = ""
-                }
-                isStrikethrough.toggle()
-                i = text.index(i, offsetBy: 2)
-                continue
-            }
-            
-            // Check for superscript (^text^)
-            if text[i] == "^" {
-                if !currentText.isEmpty {
-                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-                    currentText = ""
-                }
-                isSuperscript.toggle()
-                i = text.index(after: i)
-                continue
-            }
-            
-            // Check for subscript (_{text})
-            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "_" && text[text.index(after: i)] == "{" {
-                if !currentText.isEmpty {
-                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-                    currentText = ""
-                }
-                isSubscript.toggle()
-                i = text.index(i, offsetBy: text[text.index(after: i)] == "{" ? 2 : 1)
-                continue
-            }
-            
-            if text[i] == "}" && isSubscript {
-                if !currentText.isEmpty {
-                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-                    currentText = ""
-                }
-                isSubscript = false
-                i = text.index(after: i)
-                continue
-            }
-            
-            // Check for bold (**text**)
-            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "*" && text[text.index(after: i)] == "*" {
-                if !currentText.isEmpty {
-                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-                    currentText = ""
-                }
-                isBold.toggle()
-                i = text.index(i, offsetBy: 2)
-                continue
-            }
-            
-            // Check for underline (__text__)
-            if i < text.index(text.endIndex, offsetBy: -1) && text[i] == "_" && text[text.index(after: i)] == "_" {
-                if !currentText.isEmpty {
-                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-                    currentText = ""
-                }
-                isUnderline.toggle()
-                i = text.index(i, offsetBy: 2)
-                continue
-            }
-            
-            // Check for italic (*text* or _text_)
-            if (text[i] == "*" || text[i] == "_") && (i == text.startIndex || text[text.index(before: i)] != "\\") {
-                if !currentText.isEmpty {
-                    result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-                    currentText = ""
-                }
-                isItalic.toggle()
-                i = text.index(after: i)
-                continue
-            }
-            
-            currentText.append(text[i])
-            i = text.index(after: i)
-        }
-        
-        if !currentText.isEmpty {
-            result += formatRun(currentText, bold: isBold, italic: isItalic, underline: isUnderline, strikethrough: isStrikethrough, superscript: isSuperscript, subscript_: isSubscript)
-        }
-        
-        return result
-    }
-    
-    private static func formatRun(_ text: String, bold: Bool, italic: Bool, underline: Bool, strikethrough: Bool, superscript: Bool, subscript_: Bool) -> String {
+    private static func formatRun(_ text: String, state: WordStyleState, superscript: Bool, subscript_: Bool) -> String {
         let escaped = xmlEscape(text)
         var xml = "<w:r>"
         
-        if (bold || italic || underline || strikethrough || superscript || subscript_
+        if (state.bold || state.italic || state.underline || state.strikethrough || state.color != nil || state.highlight != nil || state.fontType != nil || state.fontSize != nil || superscript || subscript_
         ) {
             xml += "<w:rPr>"
-            if bold {
+            if state.bold {
                 xml += "<w:b/>"
             }
-            if italic {
+            if state.italic {
                 xml += "<w:i/>"
             }
-            if underline {
+            if state.underline {
                 xml += "<w:u w:val=\"single\"/>"
             }
-            if strikethrough {
+            if state.strikethrough {
                 xml += "<w:strike/>"
+            }
+            if let color = state.color {
+                xml += "<w:color w:val=\"\(color.docxHexValue)\"/>"
+            }
+            if let highlight = state.highlight {
+                xml += "<w:highlight w:val=\"\(highlight.docxValue)\"/>"
+            }
+            if let fontType = state.fontType {
+                xml += "<w:rFonts w:ascii=\"\(fontType.docxFontName)\" w:hAnsi=\"\(fontType.docxFontName)\" w:cs=\"\(fontType.docxFontName)\"/>"
+            }
+            if let fontSize = state.fontSize {
+                let halfPoints = Int((fontSize * 2).rounded())
+                xml += "<w:sz w:val=\"\(halfPoints)\"/><w:szCs w:val=\"\(halfPoints)\"/>"
             }
             if superscript {
                 xml += "<w:vertAlign w:val=\"superscript\"/>"

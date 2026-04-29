@@ -77,6 +77,13 @@ class AppModel {
     /// Load text content from a given URL. Handles .txt directly and attempts a very simple .docx extraction.
     func loadDocument(from url: URL) async {
         importedFileName = url.lastPathComponent
+        let didStartAccessingResource = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessingResource {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         do {
             let type = try url.resourceValues(forKeys: [.contentTypeKey]).contentType
             if type == .plainText || url.pathExtension.lowercased() == "txt" {
@@ -98,6 +105,7 @@ class AppModel {
             importedText = text
             createOrUpdateProject(from: url, text: text)
         } catch {
+            print("Failed to load imported document from \(url.lastPathComponent): \(error)")
             importedText = ""
         }
     }

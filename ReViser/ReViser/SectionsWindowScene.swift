@@ -121,11 +121,11 @@ struct SectionsWindowScene: View {
 }
 
 struct SectionsGridView: View {
-    private let minimumCardWidth: CGFloat = 520
+    private let minimumCardWidth: CGFloat = 420
     private let gridSpacing: CGFloat = 24
     private let horizontalInsets: CGFloat = 48
     private let verticalInsets: CGFloat = 48
-    private let estimatedCardHeight: CGFloat = 220
+    private let estimatedCardHeight: CGFloat = 200
     
     @Binding var sections: [Section]
     @Binding var overviewOrder: SectionsOverviewOrder
@@ -252,8 +252,8 @@ struct SectionsOverviewCard: View {
     let onToggleExpand: () -> Void
     let onDragStart: () -> NSItemProvider
 
-    private let collapsedEditorHeight: CGFloat = 120
-    private let collapsedCardHeight: CGFloat = 220
+    private let collapsedEditorHeight: CGFloat = 104
+    private let collapsedCardHeight: CGFloat = 190
 
     var body: some View {
         GeometryReader { proxy in
@@ -326,7 +326,7 @@ struct SectionsOverviewCard: View {
             )
             .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
         }
-        .frame(height: isExpanded ? expandedCardHeight(for: section.text, width: 420) : collapsedCardHeight)
+        .frame(height: isExpanded ? expandedCardHeight(for: section.text, width: 360) : collapsedCardHeight)
     }
 
     private func estimatedEditorHeight(for text: String, width: CGFloat) -> CGFloat {
