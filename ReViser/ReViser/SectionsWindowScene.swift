@@ -35,12 +35,23 @@ struct SectionsWindowScene: View {
     @State private var hasPendingReorder: Bool = false
     @State private var pendingTextSyncTask: Task<Void, Never>?
     @State private var overviewOrder: SectionsOverviewOrder = .row
-    
+    @State private var visibleSectionIDs: Set<UUID>? = nil
+    @State private var showingSectionFilterSheet: Bool = false
+
+    private var filterButtonLabel: String {
+        guard let visibleSectionIDs else { return "All Sections" }
+        return "\(visibleSectionIDs.count) of \(sections.count)"
+    }
+
     var body: some View {
         Group {
             if currentProjectID != nil {
                 NavigationStack {
-                    SectionsGridView(sections: $sections, overviewOrder: $overviewOrder)
+                    SectionsGridView(
+                        sections: $sections,
+                        overviewOrder: $overviewOrder,
+                        visibleSectionIDs: visibleSectionIDs
+                    )
                         .navigationTitle("Sections")
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
@@ -52,6 +63,29 @@ struct SectionsWindowScene: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.large)
+                            }
+
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Menu {
+                                    Button {
+                                        visibleSectionIDs = nil
+                                    } label: {
+                                        Label("Show All Sections", systemImage: "rectangle.stack")
+                                    }
+                                    Button {
+                                        if visibleSectionIDs == nil {
+                                            visibleSectionIDs = Set(sections.map(\.id))
+                                        }
+                                        showingSectionFilterSheet = true
+                                    } label: {
+                                        Label("Custom Selection…", systemImage: "checklist")
+                                    }
+                                } label: {
+                                    Label(filterButtonLabel, systemImage: visibleSectionIDs == nil ? "rectangle.stack" : "line.3.horizontal.decrease.circle.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
+                                .help("Choose which sections to display")
                             }
 
                             ToolbarItem(placement: .topBarTrailing) {
@@ -75,6 +109,17 @@ struct SectionsWindowScene: View {
                                 .controlSize(.large)
                                 .disabled(!hasPendingReorder)
                             }
+                        }
+                        .sheet(isPresented: $showingSectionFilterSheet) {
+                            SectionFilterSheet(
+                                sections: sections,
+                                selection: Binding(
+                                    get: { visibleSectionIDs ?? Set(sections.map(\.id)) },
+                                    set: { visibleSectionIDs = $0 }
+                                ),
+                                onShowAll: { visibleSectionIDs = nil },
+                                onDismiss: { showingSectionFilterSheet = false }
+                            )
                         }
                 }
             } else {
@@ -160,27 +205,43 @@ struct SectionsGridView: View {
     
     @Binding var sections: [Section]
     @Binding var overviewOrder: SectionsOverviewOrder
+    var visibleSectionIDs: Set<UUID>?
     @State private var draggedSectionID: UUID?
     @State private var expandedSectionIDs: Set<UUID> = []
-    
+
+    private var visibleIndexSet: [Int] {
+        guard let visibleSectionIDs else { return Array(0..<sections.count) }
+        return sections.indices.filter { visibleSectionIDs.contains(sections[$0].id) }
+    }
+
     var body: some View {
         GeometryReader { proxy in
-            let preferredRows = computedPreferredRows(for: proxy.size.height)
-            let columnsCount = computedColumns(
-                for: proxy.size.width,
-                count: sections.count,
-                preferredRows: preferredRows
-            )
-            let gridItems = computedGridItems(columnsCount: columnsCount)
-            let displayIndices = orderedIndices(count: sections.count, columns: columnsCount)
+            let visibleIndices = visibleIndexSet
+            if visibleIndices.isEmpty {
+                ContentUnavailableView(
+                    "No sections selected",
+                    systemImage: "line.3.horizontal.decrease.circle",
+                    description: Text("Use the filter menu in the toolbar to choose which sections to show.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                let preferredRows = computedPreferredRows(for: proxy.size.height)
+                let columnsCount = computedColumns(
+                    for: proxy.size.width,
+                    count: visibleIndices.count,
+                    preferredRows: preferredRows
+                )
+                let gridItems = computedGridItems(columnsCount: columnsCount)
+                let displayIndices = orderedIndices(indices: visibleIndices, columns: columnsCount)
 
-            ScrollView {
-                LazyVGrid(columns: gridItems, spacing: gridSpacing) {
-                    ForEach(displayIndices, id: \.self) { index in
-                        sectionCard(at: index)
+                ScrollView {
+                    LazyVGrid(columns: gridItems, spacing: gridSpacing) {
+                        ForEach(displayIndices, id: \.self) { index in
+                            sectionCard(at: index)
+                        }
                     }
+                    .padding(24)
                 }
-                .padding(24)
             }
         }
     }
@@ -254,25 +315,112 @@ struct SectionsGridView: View {
         )
     }
 
-    private func orderedIndices(count: Int, columns: Int) -> [Int] {
-        guard count > 0 else { return [] }
+    private func orderedIndices(indices: [Int], columns: Int) -> [Int] {
+        guard !indices.isEmpty else { return [] }
         if overviewOrder == .row {
-            return Array(0..<count)
+            return indices
         }
 
-        let rowCount = Int(ceil(Double(count) / Double(columns)))
+        let count = indices.count
+        let safeColumns = max(columns, 1)
+        let rowCount = Int(ceil(Double(count) / Double(safeColumns)))
+        let remainder = count % safeColumns
+        let numFullColumns = remainder == 0 ? safeColumns : remainder
+
+        var columnOffsets: [Int] = []
+        columnOffsets.reserveCapacity(safeColumns)
+        var runningOffset = 0
+        for column in 0..<safeColumns {
+            columnOffsets.append(runningOffset)
+            runningOffset += column < numFullColumns ? rowCount : max(rowCount - 1, 0)
+        }
+
         var result: [Int] = []
         result.reserveCapacity(count)
-
         for row in 0..<rowCount {
-            for column in 0..<columns {
-                let index = (column * rowCount) + row
-                if index < count {
-                    result.append(index)
+            for column in 0..<safeColumns {
+                let columnLength = column < numFullColumns ? rowCount : rowCount - 1
+                if row < columnLength {
+                    let position = columnOffsets[column] + row
+                    result.append(indices[position])
                 }
             }
         }
         return result
+    }
+}
+
+struct SectionFilterSheet: View {
+    let sections: [Section]
+    @Binding var selection: Set<UUID>
+    var onShowAll: () -> Void
+    var onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                SwiftUI.Section {
+                    Toggle(isOn: Binding(
+                        get: { !sections.isEmpty && selection.count == sections.count },
+                        set: { newValue in
+                            selection = newValue ? Set(sections.map(\.id)) : []
+                        }
+                    )) {
+                        Label("Select All")
+                    }
+                }
+
+                SwiftUI.Section("Sections") {
+                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                        Button {
+                            if selection.contains(section.id) {
+                                selection.remove(section.id)
+                            } else {
+                                selection.insert(section.id)
+                            }
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: selection.contains(section.id) ? "checkmark.square.fill" : "square")
+                                    .foregroundStyle(selection.contains(section.id) ? Color.accentColor : Color.secondary)
+                                    .font(.system(size: 18))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Section \(index + 1)")
+                                        .font(.headline)
+                                    Text(sectionPreview(for: section))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.leading)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle("Filter Sections")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Show All") {
+                        onShowAll()
+                        onDismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onDismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+
+    private func sectionPreview(for section: Section) -> String {
+        let trimmed = section.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "(Empty section)" }
+        return String(trimmed.prefix(160))
     }
 }
 
