@@ -11,7 +11,6 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             HomeView()
-//                .navigationTitle("Projects")
         }
         .navigationDestination(for: UUID.self) { id in
             ProjectDetailView(projectID: id)

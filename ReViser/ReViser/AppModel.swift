@@ -227,7 +227,6 @@ class AppModel {
 
     
     func updateProjectText(id: UUID, text: String) {
-        // If AppModel is a class with a mutable array:
         if let index = projects.firstIndex(where: { $0.id == id }) {
             projects[index].text = text
             if projects[index].sections.isEmpty {
@@ -236,8 +235,6 @@ class AppModel {
                 projects[index].sections[0].text = text
             }
             projects[index].lastModified = .now
-            // If you persist to disk, trigger save here
-            // saveProjects()
         }
     }
 }
