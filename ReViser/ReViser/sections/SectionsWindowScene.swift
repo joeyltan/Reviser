@@ -493,9 +493,6 @@ struct SectionsOverviewCard: View {
                 textItalicStyles: section.italicStyles,
                 textUnderlineStyles: section.underlineStyles,
                 textStrikethroughStyles: section.strikethroughStyles,
-                splitMode: false,
-                snappedY: .constant(0),
-                onSplit: { _ in },
                 onAttach: { _ in },
                 onSelectionChange: { _, _ in },
                 calculatedHeight: $calculatedHeight

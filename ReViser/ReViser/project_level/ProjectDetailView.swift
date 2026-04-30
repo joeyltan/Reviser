@@ -2,25 +2,8 @@ import SwiftUI
 import RadixUI
 import UIKit
 import UniformTypeIdentifiers
-import ZIPFoundation
-
-struct TextStyleRange: Codable, Equatable {
-    var location: Int
-    var length: Int
-    var style: String
-
-    var nsRange: NSRange {
-        NSRange(location: location, length: length)
-    }
-}
 
 struct ProjectDetailView: View {
-    struct ProjectEditSnapshot: Equatable {
-        var sections: [Section]
-        var sectionTags: [UUID: Set<String>]
-        var taggedTextBySection: [UUID: [String: Set<String>]]
-    }
-
     enum NoteDeletionAction: Equatable {
         case resolvedNote(sectionID: UUID, resolvedIndex: Int)
         case clearAll(sectionID: UUID)
@@ -35,9 +18,7 @@ struct ProjectDetailView: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var sections: [Section] = []
     @State private var textViews: [UUID: UITextView] = [:]
-    @State private var snappedY: CGFloat = 0
     @State private var showToolbar: Bool = true
-    @State private var splitMode: Bool = false
     @State private var windowMode: Bool = false
     @State private var showingRestitchedManuscript: Bool = false
     @State private var showingRestitchedDocxExport: Bool = false
@@ -437,7 +418,7 @@ struct ProjectDetailView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 32, height: 32)
-                        .foregroundColor(splitMode ? .blue : .gray)
+                        .foregroundColor(.gray)
                 }
                 .help("Split text into sections")
 
@@ -1124,7 +1105,7 @@ struct ProjectDetailView: View {
         let displayedSections = displayedSectionsForCurrentFilters()
 
         ZStack(alignment: .topLeading) {
-            if shouldShowFilteredTimeline {
+            if showFilteredTimeline {
                 linkedTimelineView()
                     .padding(40)
             } else {
@@ -1145,26 +1126,12 @@ struct ProjectDetailView: View {
                     .padding(.vertical, 40)
                 }
             }
-            
-            if splitMode {
-                Path { path in
-                    path.move(to: CGPoint(x: 0, y: snappedY))
-                    path.addLine(to: CGPoint(x: 2000, y: snappedY))
-                }
-                .stroke(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                .foregroundColor(.gray)
-                .allowsHitTesting(false)
-            }
         }
         .onChange(of: draggedSectionID) { _, newValue in
             if newValue == nil {
                 revealedReorderHandleSectionID = nil
             }
         }
-    }
-
-    private var shouldShowFilteredTimeline: Bool {
-        showFilteredTimeline
     }
 
     private func displayedSectionsForCurrentFilters() -> [Section] {
@@ -1178,32 +1145,6 @@ struct ProjectDetailView: View {
         }
 
         return filteredSections.isEmpty ? sections : filteredSections
-    }
-
-    private struct LinkedTimelineFrame: Equatable {
-        let id: UUID
-        let frame: CGRect
-    }
-
-    private struct LinkedTimelineFramePreferenceKey: PreferenceKey {
-        static var defaultValue: [LinkedTimelineFrame] = []
-
-        static func reduce(value: inout [LinkedTimelineFrame], nextValue: () -> [LinkedTimelineFrame]) {
-            value.append(contentsOf: nextValue())
-        }
-    }
-
-    private struct LinkedTimelineTextViewFrame: Equatable {
-        let id: UUID
-        let frame: CGRect
-    }
-
-    private struct LinkedTimelineTextViewFramePreferenceKey: PreferenceKey {
-        static var defaultValue: [LinkedTimelineTextViewFrame] = []
-
-        static func reduce(value: inout [LinkedTimelineTextViewFrame], nextValue: () -> [LinkedTimelineTextViewFrame]) {
-            value.append(contentsOf: nextValue())
-        }
     }
 
     @ViewBuilder
@@ -1612,11 +1553,6 @@ struct ProjectDetailView: View {
             textHighlights: section.highlights,
             textFontTypes: section.fontTypes,
             textFontSizes: section.fontSizes,
-            splitMode: splitMode,
-            snappedY: $snappedY,
-            onSplit: { y in
-                splitSection(id: section.id, y: y)
-            },
             onAttach: { view in
                 textViews[section.id] = view
             },
@@ -1684,13 +1620,6 @@ struct ProjectDetailView: View {
         sections = project.sections.isEmpty
             ? [Section(id: UUID(), text: "")]
             : project.sections
-    }
-
-    private func restitchedManuscriptText() -> String {
-        sections
-            .map(\.text)
-            .joined(separator: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func restitchedManuscriptAttributedString() -> AttributedString {
@@ -1844,10 +1773,6 @@ struct ProjectDetailView: View {
         }
     }
 
-    private func restitchedSectionTexts() -> [String] {
-        sections.map(\.text)
-    }
-
     @ViewBuilder
     private func restitchedManuscriptView(project: AppModel.Project) -> some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1864,13 +1789,6 @@ struct ProjectDetailView: View {
                 Spacer()
 
                 Menu {
-                    // Button {
-                    //     restitchedPDFDocument = RestitchedManuscriptPDFDocument(sections: restitchedSectionTexts())
-                    //     showingRestitchedPDFExport = true
-                    // } label: {
-                    //     Label("Export as PDF", systemImage: "doc.richtext")
-                    // }
-
                     Button {
                         restitchedDocxDocument = RestitchedManuscriptDocxDocument(sections: sections)
                         showingRestitchedDocxExport = true
@@ -1891,26 +1809,14 @@ struct ProjectDetailView: View {
 
             ScrollView {
                 let manuscriptAttributedText = restitchedManuscriptAttributedString()
-                if manuscriptAttributedText.characters.isEmpty {
-                    Text("(Empty project)")
-                        .font(.system(size: 24))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding(24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(.secondarySystemBackground))
-                        )
-                } else {
-                    Text(manuscriptAttributedText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding(24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(.secondarySystemBackground))
-                        )
-                }
+                Text(manuscriptAttributedText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(.secondarySystemBackground))
+                    )
             }
         }
         .padding(24)
@@ -1976,11 +1882,6 @@ struct ProjectDetailView: View {
                     textItalicStyles: section.italicStyles,
                     textUnderlineStyles: section.underlineStyles,
                     textStrikethroughStyles: section.strikethroughStyles,
-                    splitMode: splitMode,
-                    snappedY: $snappedY,
-                    onSplit: { y in
-                        splitSection(id: section.id, y: y)
-                    },
                     onAttach: { view in
                         textViews[section.id] = view
                     },
@@ -2410,76 +2311,6 @@ struct ProjectDetailView: View {
         )
     }
     
-    func splitSection(id: UUID, y: CGFloat) {
-        guard let index = sections.firstIndex(where: { $0.id == id }),
-              let textView = textViews[id] else { return }
-
-        let text = sections[index].text
-        let sourceSection = sections[index]
-        let nsText = text as NSString
-        let lm = textView.layoutManager
-
-        let insetTop = textView.textContainerInset.top
-        let localY = y + textView.contentOffset.y - insetTop
-
-        var glyphIndex = 0
-        var lineY: CGFloat = 0
-        var charIndex = 0
-
-        while glyphIndex < lm.numberOfGlyphs {
-            var lineRange = NSRange()
-
-            let rect = lm.lineFragmentUsedRect(
-                forGlyphAt: glyphIndex,
-                effectiveRange: &lineRange
-            )
-
-            if localY < lineY + rect.height {
-                charIndex = lineRange.location
-                break
-            }
-
-            lineY += rect.height
-            glyphIndex = lineRange.location + lineRange.length
-        }
-
-        let firstRange = NSRange(location: 0, length: charIndex)
-        let first = nsText.substring(with: firstRange)
-
-        var secondStart = charIndex
-        if secondStart < nsText.length, nsText.substring(with: NSRange(location: secondStart, length: 1)) == "\n" {
-            secondStart += 1
-        }
-
-        let secondRange = NSRange(location: secondStart, length: nsText.length - secondStart)
-        let second = nsText.substring(with: secondRange)
-
-        let originalHeight = sectionHeights[id] ?? textView.sizeThatFits(CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude)).height
-        let firstID = UUID()
-        let secondID = UUID()
-
-        sections.remove(at: index)
-
-        if !first.isEmpty {
-            sections.insert(styledSection(from: sourceSection, text: first, sourceRange: firstRange, id: firstID), at: index)
-        }
-
-        if !second.isEmpty {
-            sections.insert(styledSection(from: sourceSection, text: second, sourceRange: secondRange, id: secondID), at: index + (first.isEmpty ? 0 : 1))
-        }
-
-        seedSplitHeights(
-            originalHeight: originalHeight,
-            firstID: first.isEmpty ? nil : firstID,
-            firstLength: first.count,
-            middleID: nil,
-            middleLength: 0,
-            secondID: second.isEmpty ? nil : secondID,
-            secondLength: second.count
-        )
-        sectionHeights[id] = nil
-    }
-
     func splitAtCurrentCaret() {
         guard let id = activeSectionID,
               let index = sections.firstIndex(where: { $0.id == id }),
@@ -2775,50 +2606,6 @@ struct ProjectDetailView: View {
         activeSectionID = currentID
     }
 
-    private func paragraphs(in text: String) -> [String] {
-        let nsText = text as NSString
-        var paragraphs: [String] = []
-        var currentParagraph = ""
-        var separatorRun = ""
-        var hasParagraphContent = false
-        var index = 0
-
-        while index < nsText.length {
-            let lineRange = nsText.lineRange(for: NSRange(location: index, length: 0))
-            let lineText = nsText.substring(with: lineRange)
-
-            if lineText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                if hasParagraphContent {
-                    separatorRun += lineText
-                } else {
-                    separatorRun += lineText
-                }
-            } else {
-                if !hasParagraphContent {
-                    currentParagraph = separatorRun + lineText
-                    separatorRun = ""
-                    hasParagraphContent = true
-                } else if !separatorRun.isEmpty {
-                    paragraphs.append(currentParagraph + separatorRun)
-                    currentParagraph = lineText
-                    separatorRun = ""
-                } else {
-                    currentParagraph += lineText
-                }
-            }
-
-            index = lineRange.location + lineRange.length
-        }
-
-        if hasParagraphContent {
-            paragraphs.append(currentParagraph + separatorRun)
-        } else if !separatorRun.isEmpty {
-            paragraphs.append(separatorRun)
-        }
-
-        return paragraphs
-    }
-
     private func paragraphSlices(in text: String) -> [(text: String, range: NSRange)] {
         let nsText = text as NSString
         var slices: [(text: String, range: NSRange)] = []
@@ -3003,15 +2790,6 @@ struct ProjectDetailView: View {
 
         let note = sections[idx].notes.remove(at: noteIndex)
         sections[idx].resolvedNotes.append(note)
-        revealedResolveNoteKey = nil
-    }
-
-    func deleteNote(sectionID: UUID, noteIndex: Int) {
-        guard let idx = sections.firstIndex(where: { $0.id == sectionID }),
-              sections[idx].notes.indices.contains(noteIndex) else { return }
-
-        editingNoteKeys = editingNoteKeys.filter { !$0.hasPrefix("\(sectionID.uuidString)-") }
-        sections[idx].notes.remove(at: noteIndex)
         revealedResolveNoteKey = nil
     }
 
@@ -3560,17 +3338,6 @@ struct ProjectDetailView: View {
         Set(taggedTextBySection[sectionID]?.values.flatMap { $0 } ?? [])
     }
 
-    func isTagAppliedInActiveContext(_ tag: String) -> Bool {
-        guard let activeSectionID = activeSectionID else { return false }
-
-        if let selectedText = currentlySelectedText(in: activeSectionID),
-           let tagsForSelection = taggedTextBySection[activeSectionID]?[selectedText] {
-            return tagsForSelection.contains(tag)
-        }
-
-        return allTags(for: activeSectionID).contains(tag)
-    }
-
     enum TagApplicationState {
         case none
         case textOnly
@@ -3728,830 +3495,4 @@ struct ProjectDetailView: View {
         taggedTextBySection[sectionID] = snippets.isEmpty ? nil : snippets
     }
 
-}
-
-struct SectionWindowCard: View {
-    let index: Int
-    @Binding var section: Section
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("\(index + 1)")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        Circle().fill(Color.secondary.opacity(0.12))
-                    )
-                    .overlay(
-                        Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                    )
-                Spacer()
-            }
-
-            TextEditor(text: $section.text)
-                .font(.system(size: 25))
-                .frame(minHeight: 120)
-                .scrollContentBackground(.hidden)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
-    }
-}
-
-struct TextKitView: UIViewRepresentable {
-    struct RenderState: Equatable {
-        var text: String
-        var highlightedSnippets: Set<String>
-        var textColors: [TextStyleRange]
-        var textHighlights: [TextStyleRange]
-        var textFontTypes: [TextStyleRange]
-        var textFontSizes: [TextStyleRange]
-        var textBoldStyles: [TextStyleRange]
-        var textItalicStyles: [TextStyleRange]
-        var textUnderlineStyles: [TextStyleRange]
-        var textStrikethroughStyles: [TextStyleRange]
-    }
-
-    @Binding var text: String
-    var highlightedSnippets: Set<String> = []
-    var textColors: [TextStyleRange] = []
-    var textHighlights: [TextStyleRange] = []
-    var textFontTypes: [TextStyleRange] = []
-    var textFontSizes: [TextStyleRange] = []
-    var textBoldStyles: [TextStyleRange] = []
-    var textItalicStyles: [TextStyleRange] = []
-    var textUnderlineStyles: [TextStyleRange] = []
-    var textStrikethroughStyles: [TextStyleRange] = []
-    var splitMode: Bool
-    @Binding var snappedY: CGFloat
-    var onSplit: (CGFloat) -> Void
-    var onAttach: (UITextView) -> Void
-    var onSelectionChange: (Int, Int) -> Void
-    @Binding var calculatedHeight: CGFloat
-    var onHighlightedSnippetAnchorsChange: (([String: [CGPoint]]) -> Void)? = nil
-    var selectionMenuBuilder: (([UIMenuElement]) -> UIMenu?)? = nil
-
-    private var renderState: RenderState {
-        RenderState(
-            text: text,
-            highlightedSnippets: highlightedSnippets,
-            textColors: textColors,
-            textHighlights: textHighlights,
-            textFontTypes: textFontTypes,
-            textFontSizes: textFontSizes,
-            textBoldStyles: textBoldStyles,
-            textItalicStyles: textItalicStyles,
-            textUnderlineStyles: textUnderlineStyles,
-            textStrikethroughStyles: textStrikethroughStyles
-        )
-    }
-
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
-
-        view.font = UIFont.systemFont(ofSize: 25)
-        view.isScrollEnabled = true
-        // when i change this to true then get the height problem, but when false then have width problem
-        view.backgroundColor = .clear
-        view.delegate = context.coordinator
-        
-        view.textContainer.lineFragmentPadding = 0
-        view.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
-        view.textContainer.widthTracksTextView = true   // wrap text to view width
-        view.textContainer.lineBreakMode = .byWordWrapping
-    
-        view.isEditable = true
-        view.isSelectable = true
-        
-        context.coordinator.textView = view
-        DispatchQueue.main.async {
-            self.onAttach(view)
-            self.onSelectionChange(view.selectedRange.location, view.selectedRange.length)
-        }
-        
-        return view
-    }
-
-    func updateUIView(_ uiView: UITextView, context: Context) {
-        let coordinator = context.coordinator
-        coordinator.parent = self
-
-        let currentRenderState = renderState
-        let didChangeRenderedContent = coordinator.lastRenderState != currentRenderState
-        let didChangeWidth = coordinator.lastMeasuredWidth != uiView.bounds.width
-
-        if didChangeRenderedContent {
-            let selectedRange = uiView.selectedRange
-            uiView.attributedText = makeAttributedText(from: text)
-
-            let clampedLocation = min(selectedRange.location, uiView.attributedText.length)
-            let maxLength = max(0, uiView.attributedText.length - clampedLocation)
-            let clampedLength = min(selectedRange.length, maxLength)
-            uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
-            coordinator.lastRenderState = currentRenderState
-        }
-
-//        context.coordinator.splitMode = splitMode
-//        uiView.isEditable = true
-//        uiView.isSelectable = true
-        
-        guard didChangeRenderedContent || didChangeWidth else { return }
-
-        DispatchQueue.main.async {
-            let newHeight = uiView.sizeThatFits(CGSize(width: uiView.bounds.width, height: .greatestFiniteMagnitude)).height
-            if self.calculatedHeight != newHeight {
-                self.calculatedHeight = newHeight
-            }
-
-            if didChangeRenderedContent || didChangeWidth {
-                self.onHighlightedSnippetAnchorsChange?(self.computeSnippetAnchorPoints(in: uiView))
-            }
-            coordinator.lastMeasuredWidth = uiView.bounds.width
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    private func makeAttributedText(from text: String) -> NSAttributedString {
-        let fullRange = NSRange(location: 0, length: (text as NSString).length)
-        let attributed = NSMutableAttributedString(string: text)
-        attributed.addAttributes([
-            .font: UIFont.systemFont(ofSize: 25),
-            .foregroundColor: UIColor.label
-        ], range: fullRange)
-
-        applyFontTypeStyles(to: attributed, text: text, fontTypes: textFontTypes)
-        applyFontSizeStyles(to: attributed, text: text, fontSizes: textFontSizes)
-        applyBoldStyles(to: attributed, text: text, boldStyles: textBoldStyles)
-        applyItalicStyles(to: attributed, text: text, italicStyles: textItalicStyles)
-        applyUnderlineStyles(to: attributed, text: text, underlineStyles: textUnderlineStyles)
-        applyStrikethroughStyles(to: attributed, text: text, strikethroughStyles: textStrikethroughStyles)
-        applyColorStyles(to: attributed, text: text, colors: textColors)
-        applyHighlightStyles(to: attributed, text: text, highlights: textHighlights)
-
-        for snippet in highlightedSnippets where !snippet.isEmpty {
-            let nsText = text as NSString
-            var searchRange = NSRange(location: 0, length: nsText.length)
-
-            while true {
-                let found = nsText.range(of: snippet, options: [], range: searchRange)
-                if found.location == NSNotFound { break }
-
-                attributed.addAttribute(
-                    .backgroundColor,
-                    value: UIColor.systemOrange.withAlphaComponent(0.30),
-                    range: found
-                )
-
-                let nextStart = found.location + found.length
-                if nextStart >= nsText.length { break }
-                searchRange = NSRange(location: nextStart, length: nsText.length - nextStart)
-            }
-        }
-
-        return attributed
-    }
-
-    private func applyHighlightStyles(to attributed: NSMutableAttributedString, text: String, highlights: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in highlights {
-            guard let style = ProjectDetailView.TextHighlightStyle(rawValue: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.backgroundColor, value: style.uiColor, range: nsRange)
-        }
-    }
-
-    private func applyColorStyles(to attributed: NSMutableAttributedString, text: String, colors: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in colors {
-            guard let style = ProjectDetailView.TextColorStyle(rawValue: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.foregroundColor, value: style.uiColor, range: nsRange)
-        }
-    }
-
-    private func applyFontTypeStyles(to attributed: NSMutableAttributedString, text: String, fontTypes: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in fontTypes {
-            guard let style = ProjectDetailView.TextFontTypeStyle(rawValue: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-
-            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 25)
-            let font: UIFont
-            if let design = style.uiKitDesign, let designedFont = existingFont.fontDescriptor.withDesign(design).flatMap({ UIFont(descriptor: $0, size: existingFont.pointSize) }) {
-                font = designedFont
-            } else {
-                font = UIFont.systemFont(ofSize: existingFont.pointSize)
-            }
-
-            attributed.addAttribute(.font, value: font, range: nsRange)
-        }
-    }
-
-    private func applyFontSizeStyles(to attributed: NSMutableAttributedString, text: String, fontSizes: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in fontSizes {
-            guard let pointSize = ProjectDetailView.TextFontSizeStyle.pointSize(for: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-
-            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 25)
-            let font = existingFont.withSize(pointSize)
-            attributed.addAttribute(.font, value: font, range: nsRange)
-        }
-    }
-
-    private func applyBoldStyles(to attributed: NSMutableAttributedString, text: String, boldStyles: [TextStyleRange]) {
-        applyFontTraitStyles(to: attributed, text: text, ranges: boldStyles, trait: .traitBold)
-    }
-
-    private func applyItalicStyles(to attributed: NSMutableAttributedString, text: String, italicStyles: [TextStyleRange]) {
-        applyFontTraitStyles(to: attributed, text: text, ranges: italicStyles, trait: .traitItalic)
-    }
-
-    private func applyUnderlineStyles(to attributed: NSMutableAttributedString, text: String, underlineStyles: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in underlineStyles {
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
-        }
-    }
-
-    private func applyStrikethroughStyles(to attributed: NSMutableAttributedString, text: String, strikethroughStyles: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in strikethroughStyles {
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
-        }
-    }
-
-    private func applyFontTraitStyles(to attributed: NSMutableAttributedString, text: String, ranges: [TextStyleRange], trait: UIFontDescriptor.SymbolicTraits) {
-        let textLength = (text as NSString).length
-
-        for range in ranges {
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-
-            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 25)
-            let combinedTraits = existingFont.fontDescriptor.symbolicTraits.union(trait)
-            if let descriptor = existingFont.fontDescriptor.withSymbolicTraits(combinedTraits) {
-                let font = UIFont(descriptor: descriptor, size: existingFont.pointSize)
-                attributed.addAttribute(.font, value: font, range: nsRange)
-            }
-        }
-    }
-
-    private func computeSnippetAnchorPoints(in textView: UITextView) -> [String: [CGPoint]] {
-        guard !highlightedSnippets.isEmpty else { return [:] }
-
-        var result: [String: [CGPoint]] = [:]
-        let text = textView.text ?? ""
-        let nsText = text as NSString
-        let layoutManager = textView.layoutManager
-
-        for snippet in highlightedSnippets where !snippet.isEmpty {
-            var searchRange = NSRange(location: 0, length: nsText.length)
-
-            while true {
-                let found = nsText.range(of: snippet, options: [], range: searchRange)
-                if found.location == NSNotFound { break }
-
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: found, actualCharacterRange: nil)
-                var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer)
-
-                rect.origin.x += textView.textContainerInset.left
-                rect.origin.y += textView.textContainerInset.top - textView.contentOffset.y
-
-                let anchor = CGPoint(x: rect.minX, y: rect.minY)
-                result[snippet, default: []].append(anchor)
-
-                let nextStart = found.location + found.length
-                if nextStart >= nsText.length { break }
-                searchRange = NSRange(location: nextStart, length: nsText.length - nextStart)
-            }
-        }
-
-        return result
-    }
-
-    class Coordinator: NSObject, UITextViewDelegate {
-        var parent: TextKitView
-        var textView: UITextView?
-        var splitMode: Bool = false
-        var lastRenderState: RenderState?
-        var lastMeasuredWidth: CGFloat?
-
-        init(_ parent: TextKitView) {
-            self.parent = parent
-        }
-
-        func textViewDidChange(_ textView: UITextView) {
-            parent.text = textView.text
-        }
-        
-        func textViewDidChangeSelection(_ textView: UITextView) {
-            parent.onSelectionChange(textView.selectedRange.location, textView.selectedRange.length)
-        }
-
-        @available(iOS 16.0, *)
-        func textView(_ textView: UITextView, editMenuForTextIn textRange: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
-            parent.selectionMenuBuilder?(suggestedActions)
-        }
-    }
-}
-
-struct Section: Identifiable, Codable, Equatable {
-    let id: UUID
-    var text: String
-    var notes: [String] = []
-    var resolvedNotes: [String] = []
-    var colors: [TextStyleRange] = []
-    var highlights: [TextStyleRange] = []
-    var fontTypes: [TextStyleRange] = []
-    var fontSizes: [TextStyleRange] = []
-    var boldStyles: [TextStyleRange] = []
-    var italicStyles: [TextStyleRange] = []
-    var underlineStyles: [TextStyleRange] = []
-    var strikethroughStyles: [TextStyleRange] = []
-
-    init(id: UUID, text: String, notes: [String] = [], resolvedNotes: [String] = [], colors: [TextStyleRange] = [], highlights: [TextStyleRange] = [], fontTypes: [TextStyleRange] = [], fontSizes: [TextStyleRange] = [], boldStyles: [TextStyleRange] = [], italicStyles: [TextStyleRange] = [], underlineStyles: [TextStyleRange] = [], strikethroughStyles: [TextStyleRange] = []) {
-        self.id = id
-        self.text = text
-        self.notes = notes
-        self.resolvedNotes = resolvedNotes
-        self.colors = colors
-        self.highlights = highlights
-        self.fontTypes = fontTypes
-        self.fontSizes = fontSizes
-        self.boldStyles = boldStyles
-        self.italicStyles = italicStyles
-        self.underlineStyles = underlineStyles
-        self.strikethroughStyles = strikethroughStyles
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case text
-        case notes
-        case resolvedNotes
-        case colors
-        case highlights
-        case fontTypes
-        case fontSizes
-        case boldStyles
-        case italicStyles
-        case underlineStyles
-        case strikethroughStyles
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        text = try container.decode(String.self, forKey: .text)
-        notes = try container.decodeIfPresent([String].self, forKey: .notes) ?? []
-        resolvedNotes = try container.decodeIfPresent([String].self, forKey: .resolvedNotes) ?? []
-        colors = try container.decodeIfPresent([TextStyleRange].self, forKey: .colors) ?? []
-        highlights = try container.decodeIfPresent([TextStyleRange].self, forKey: .highlights) ?? []
-        fontTypes = try container.decodeIfPresent([TextStyleRange].self, forKey: .fontTypes) ?? []
-        fontSizes = try container.decodeIfPresent([TextStyleRange].self, forKey: .fontSizes) ?? []
-        boldStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .boldStyles) ?? []
-        italicStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .italicStyles) ?? []
-        underlineStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .underlineStyles) ?? []
-        strikethroughStyles = try container.decodeIfPresent([TextStyleRange].self, forKey: .strikethroughStyles) ?? []
-    }
-}
-
-struct RestitchedManuscriptPDFDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.pdf] }
-
-    var sections: [String]
-
-    init(text: String = "") {
-        self.sections = text.isEmpty ? [] : [text]
-    }
-
-    init(sections: [String]) {
-        self.sections = sections
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        let text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
-        sections = text.isEmpty ? [] : [text]
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: Self.makePDFData(from: sections))
-    }
-
-    private static func makePDFData(from sections: [String]) -> Data {
-        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
-        let contentRect = pageRect.insetBy(dx: 36, dy: 36)
-        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
-        let exportText = sections.isEmpty ? "(Empty project)" : sections.joined(separator: "")
-
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        paragraphStyle.paragraphSpacing = 6
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 16),
-            .paragraphStyle: paragraphStyle
-        ]
-
-        let attributedText = NSAttributedString(string: exportText, attributes: attributes)
-        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
-
-        return renderer.pdfData { context in
-            var currentLocation = 0
-
-            repeat {
-                context.beginPage()
-                let cgContext = context.cgContext
-                cgContext.saveGState()
-                cgContext.translateBy(x: 0, y: pageRect.height)
-                cgContext.scaleBy(x: 1, y: -1)
-
-                let path = CGPath(rect: contentRect, transform: nil)
-                let frame = CTFramesetterCreateFrame(
-                    framesetter,
-                    CFRange(location: currentLocation, length: 0),
-                    path,
-                    nil
-                )
-                CTFrameDraw(frame, cgContext)
-
-                let visibleRange = CTFrameGetVisibleStringRange(frame)
-                currentLocation += visibleRange.length
-                cgContext.restoreGState()
-
-                if attributedText.length == 0 {
-                    break
-                }
-            } while currentLocation < attributedText.length
-        }
-    }
-}
-
-struct RestitchedManuscriptDocxDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [UTType(filenameExtension: "docx")!] }
-
-    var sections: [Section]
-
-    init(text: String = "") {
-        self.sections = text.isEmpty ? [] : [Section(id: UUID(), text: text)]
-    }
-
-    init(sections: [Section]) {
-        self.sections = sections
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        let text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
-        sections = text.isEmpty ? [] : [Section(id: UUID(), text: text)]
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("docx")
-
-        try Self.writeDocxArchive(sections: sections, to: tempURL)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-
-        let data = try Data(contentsOf: tempURL)
-        return FileWrapper(regularFileWithContents: data)
-    }
-
-    private static func writeDocxArchive(sections: [Section], to url: URL) throws {
-        let archive = try Archive(url: url, accessMode: .create)
-        let paragraphs = sections.isEmpty ? [Section(id: UUID(), text: "(Empty project)")] : sections
-
-        let bodyXML = paragraphs.map { paragraph in
-            let cleaned = paragraph.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if cleaned.isEmpty {
-                return "<w:p/>"
-            }
-
-            return styledParagraphXML(for: paragraph)
-        }.joined(separator: "")
-
-        let documentXML = """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">
-          <w:body>
-            \(bodyXML)
-            <w:sectPr>
-              <w:pgSz w:w="12240" w:h="15840"/>
-              <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
-            </w:sectPr>
-          </w:body>
-        </w:document>
-        """
-
-        let contentTypesXML = """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-          <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-          <Default Extension="xml" ContentType="application/xml"/>
-          <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-        </Types>
-        """
-
-        let relsXML = """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-        </Relationships>
-        """
-
-        try addArchiveEntry(archive, path: "[Content_Types].xml", data: Data(contentTypesXML.utf8))
-        try addArchiveEntry(archive, path: "_rels/.rels", data: Data(relsXML.utf8))
-        try addArchiveEntry(archive, path: "word/document.xml", data: Data(documentXML.utf8))
-    }
-
-    private static func styledParagraphXML(for section: Section) -> String {
-        let text = section.text
-        let nsText = text as NSString
-        guard nsText.length > 0 else { return "<w:p/>" }
-
-        var runs: [String] = []
-        var currentText = ""
-        var currentState = WordStyleState()
-
-        func flushCurrentText() {
-            guard !currentText.isEmpty else { return }
-            runs.append(
-                formatRun(
-                    currentText,
-                    state: currentState,
-                    superscript: false,
-                    subscript_: false
-                )
-            )
-            currentText = ""
-        }
-
-        for index in 0..<nsText.length {
-            let character = nsText.substring(with: NSRange(location: index, length: 1))
-
-            if character == "\n" || character == "\r" {
-                flushCurrentText()
-                if character == "\r", index + 1 < nsText.length {
-                    let nextCharacter = nsText.substring(with: NSRange(location: index + 1, length: 1))
-                    if nextCharacter == "\n" {
-                        continue
-                    }
-                }
-                runs.append("<w:r><w:br/></w:r>")
-                continue
-            }
-
-            let newState = WordStyleState(
-                bold: sectionHasStyle(section.boldStyles, at: index),
-                italic: sectionHasStyle(section.italicStyles, at: index),
-                underline: sectionHasStyle(section.underlineStyles, at: index),
-                strikethrough: sectionHasStyle(section.strikethroughStyles, at: index),
-                color: sectionColorStyle(section.colors, at: index),
-                highlight: sectionHighlightStyle(section.highlights, at: index),
-                fontType: sectionFontTypeStyle(section.fontTypes, at: index),
-                fontSize: sectionFontSizeStyle(section.fontSizes, at: index)
-            )
-
-            if currentText.isEmpty {
-                currentState = newState
-                currentText.append(character)
-            } else if newState == currentState {
-                currentText.append(character)
-            } else {
-                flushCurrentText()
-                currentState = newState
-                currentText.append(character)
-            }
-        }
-
-        flushCurrentText()
-        return "<w:p>\(runs.joined())</w:p>"
-    }
-
-    private static func sectionHasStyle(_ ranges: [TextStyleRange], at index: Int) -> Bool {
-        ranges.contains { index >= $0.location && index < $0.location + $0.length }
-    }
-
-    private static func sectionColorStyle(_ ranges: [TextStyleRange], at index: Int) -> ProjectDetailView.TextColorStyle? {
-        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
-        return ProjectDetailView.TextColorStyle(rawValue: range.style)
-    }
-
-    private static func sectionHighlightStyle(_ ranges: [TextStyleRange], at index: Int) -> ProjectDetailView.TextHighlightStyle? {
-        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
-        return ProjectDetailView.TextHighlightStyle(rawValue: range.style)
-    }
-
-    private static func sectionFontTypeStyle(_ ranges: [TextStyleRange], at index: Int) -> ProjectDetailView.TextFontTypeStyle? {
-        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
-        return ProjectDetailView.TextFontTypeStyle(rawValue: range.style)
-    }
-
-    private static func sectionFontSizeStyle(_ ranges: [TextStyleRange], at index: Int) -> CGFloat? {
-        guard let range = ranges.last(where: { index >= $0.location && index < $0.location + $0.length }) else { return nil }
-        return ProjectDetailView.TextFontSizeStyle.pointSize(for: range.style)
-    }
-
-    private struct WordStyleState: Equatable {
-        let bold: Bool
-        let italic: Bool
-        let underline: Bool
-        let strikethrough: Bool
-        let color: ProjectDetailView.TextColorStyle?
-        let highlight: ProjectDetailView.TextHighlightStyle?
-        let fontType: ProjectDetailView.TextFontTypeStyle?
-        let fontSize: CGFloat?
-
-        init(
-            bold: Bool = false,
-            italic: Bool = false,
-            underline: Bool = false,
-            strikethrough: Bool = false,
-            color: ProjectDetailView.TextColorStyle? = nil,
-            highlight: ProjectDetailView.TextHighlightStyle? = nil,
-            fontType: ProjectDetailView.TextFontTypeStyle? = nil,
-            fontSize: CGFloat? = nil
-        ) {
-            self.bold = bold
-            self.italic = italic
-            self.underline = underline
-            self.strikethrough = strikethrough
-            self.color = color
-            self.highlight = highlight
-            self.fontType = fontType
-            self.fontSize = fontSize
-        }
-    }
-
-    private static func addArchiveEntry(_ archive: Archive, path: String, data: Data) throws {
-        try archive.addEntry(
-            with: path,
-            type: .file,
-            uncompressedSize: UInt32(data.count),
-            compressionMethod: .deflate
-        ) { position, size in
-            data.subdata(in: position..<position + size)
-        }
-    }
-
-    private static func formatRun(_ text: String, state: WordStyleState, superscript: Bool, subscript_: Bool) -> String {
-        let escaped = xmlEscape(text)
-        var xml = "<w:r>"
-        
-        if (state.bold || state.italic || state.underline || state.strikethrough || state.color != nil || state.highlight != nil || state.fontType != nil || state.fontSize != nil || superscript || subscript_
-        ) {
-            xml += "<w:rPr>"
-            if let fontType = state.fontType {
-                xml += "<w:rFonts w:ascii=\"\(fontType.docxFontName)\" w:hAnsi=\"\(fontType.docxFontName)\" w:cs=\"\(fontType.docxFontName)\"/>"
-            }
-            if state.bold {
-                xml += "<w:b/>"
-            }
-            if state.italic {
-                xml += "<w:i/>"
-            }
-            if state.strikethrough {
-                xml += "<w:strike/>"
-            }
-            if let color = state.color {
-                xml += "<w:color w:val=\"\(color.docxHexValue)\"/>"
-            }
-            if let fontSize = state.fontSize {
-                let halfPoints = Int((fontSize * 2).rounded())
-                xml += "<w:sz w:val=\"\(halfPoints)\"/><w:szCs w:val=\"\(halfPoints)\"/>"
-            }
-            if let highlight = state.highlight {
-                xml += "<w:highlight w:val=\"\(highlight.docxValue)\"/>"
-            }
-            if state.underline {
-                xml += "<w:u w:val=\"single\"/>"
-            }
-            if let highlight = state.highlight {
-                xml += "<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"\(highlight.docxShadingFillHex)\"/>"
-            }
-            if superscript {
-                xml += "<w:vertAlign w:val=\"superscript\"/>"
-            }
-            if subscript_ {
-                xml += "<w:vertAlign w:val=\"subscript\"/>"
-            }
-            xml += "</w:rPr>"
-        }
-        
-        xml += "<w:t xml:space=\"preserve\">\(escaped)</w:t></w:r>"
-        return xml
-    }
-
-    private static func xmlEscape(_ string: String) -> String {
-        string
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&apos;")
-    }
-}
-
-struct SectionWindowPickerSheet: View {
-    let sections: [Section]
-    @Binding var selection: Set<UUID>
-    var onCancel: () -> Void
-    var onConfirm: (Set<UUID>) -> Void
-
-    var body: some View {
-        NavigationStack {
-            List {
-                SwiftUI.Section {
-                    Toggle(isOn: Binding(
-                        get: { !sections.isEmpty && selection.count == sections.count },
-                        set: { newValue in
-                            selection = newValue ? Set(sections.map(\.id)) : []
-                        }
-                    )) {
-                        Text("Select All")
-                    }
-                }
-
-                SwiftUI.Section("Sections") {
-                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-                        Button {
-                            if selection.contains(section.id) {
-                                selection.remove(section.id)
-                            } else {
-                                selection.insert(section.id)
-                            }
-                        } label: {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: selection.contains(section.id) ? "checkmark.square.fill" : "square")
-                                    .foregroundStyle(selection.contains(section.id) ? Color.accentColor : Color.secondary)
-                                    .font(.system(size: 18))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Section \(index + 1)")
-                                        .font(.headline)
-                                    Text(sectionPreview(for: section))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.leading)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .navigationTitle("Open Sections in Windows")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onCancel)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Open Windows") {
-                        onConfirm(selection)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(selection.isEmpty)
-                }
-            }
-        }
-        .frame(minWidth: 720, idealWidth: 760, minHeight: 520, idealHeight: 640)
-    }
-
-    private func sectionPreview(for section: Section) -> String {
-        let trimmed = section.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "(Empty section)" }
-        return String(trimmed.prefix(160))
-    }
 }

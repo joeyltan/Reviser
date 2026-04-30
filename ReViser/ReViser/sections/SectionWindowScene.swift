@@ -52,9 +52,6 @@ struct SectionWindowScene: View {
                         textItalicStyles: currentSection.italicStyles,
                         textUnderlineStyles: currentSection.underlineStyles,
                         textStrikethroughStyles: currentSection.strikethroughStyles,
-                        splitMode: false,
-                        snappedY: .constant(0),
-                        onSplit: { _ in },
                         onAttach: { _ in },
                         onSelectionChange: { _,_  in },
                         calculatedHeight: $calculatedHeight
@@ -426,4 +423,3 @@ struct SectionWindowScene: View {
         )
     }
 }
-
