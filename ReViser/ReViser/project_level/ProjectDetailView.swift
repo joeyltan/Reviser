@@ -25,6 +25,8 @@ struct ProjectDetailView: View {
     @State private var restitchedDocxDocument = RestitchedManuscriptDocxDocument(text: "")
     @State private var showingCustomFontSizeSheet: Bool = false
     @State private var customFontSizeValue: Double = 25
+    @State private var capturedFontSizeRange: NSRange? = nil
+    @State private var capturedFontSizeSectionID: UUID? = nil
 
     @State private var activeSectionID: UUID?
     @State private var caretIndexBySection: [UUID: Int] = [:]
@@ -547,13 +549,10 @@ struct ProjectDetailView: View {
                         }
                     }
 
-                    Menu("Font Size") {
-                        Button {
-                            customFontSizeValue = 25
-                            showingCustomFontSizeSheet = true
-                        } label: {
-                            Label("Custom Size…", systemImage: "number")
-                        }
+                    Button {
+                        openCustomFontSizePopup()
+                    } label: {
+                        Label("Font Size", systemImage: "textformat.size")
                     }
 
                 } label: {
@@ -827,11 +826,8 @@ struct ProjectDetailView: View {
                 Button("Monospaced") { applyTextFontType(.monospaced) }
             }
 
-            Menu("Font Size") {
-                Button("Custom Size…") {
-                    customFontSizeValue = 25
-                    showingCustomFontSizeSheet = true
-                }
+            Button("Font Size") {
+                openCustomFontSizePopup()
             }
         } label: {
             Label("Text Styling", systemImage: "wand.and.sparkles")
@@ -1019,12 +1015,9 @@ struct ProjectDetailView: View {
                 UIAction(title: "Pink", image: swatchImage(.systemPink)) { _ in applyTextHighlight(.pink) },
                 UIAction(title: "Blue", image: swatchImage(.systemBlue)) { _ in applyTextHighlight(.blue) }
             ]),
-            UIMenu(title: "Font Size", children: [
-                UIAction(title: "Custom Size…", image: UIImage(systemName: "number")) { _ in
-                    customFontSizeValue = 25
-                    showingCustomFontSizeSheet = true
-                }
-            ]),
+            UIAction(title: "Font Size", image: UIImage(systemName: "textformat.size")) { _ in
+                openCustomFontSizePopup()
+            },
             UIMenu(title: "Font Type", children: [
                 UIAction(title: "System", image: UIImage(systemName: "textformat")) { _ in applyTextFontType(.system) },
                 UIAction(title: "Serif", image: UIImage(systemName: "textformat.alt")) { _ in applyTextFontType(.serif) },
@@ -2695,17 +2688,19 @@ struct ProjectDetailView: View {
 
     func applyTextFontSize(_ pointSize: CGFloat) {
         guard let activeSectionID = activeSectionID,
-              let textView = textViews[activeSectionID],
-              let index = sections.firstIndex(where: { $0.id == activeSectionID }) else { return }
+              let textView = textViews[activeSectionID] else { return }
+        applyTextFontSize(pointSize, in: textView.selectedRange, sectionID: activeSectionID)
+    }
 
-        let selectedRange = textView.selectedRange
-        guard selectedRange.length > 0 else { return }
+    func applyTextFontSize(_ pointSize: CGFloat, in range: NSRange, sectionID: UUID) {
+        guard range.length > 0,
+              let index = sections.firstIndex(where: { $0.id == sectionID }) else { return }
 
         let nsText = sections[index].text as NSString
-        guard selectedRange.location + selectedRange.length <= nsText.length else { return }
+        guard range.location + range.length <= nsText.length else { return }
 
         let roundedPointSize = Int(pointSize.rounded())
-        toggleTextStyleRange(selectedRange, in: &sections[index].fontSizes, style: "custom:\(roundedPointSize)")
+        toggleTextStyleRange(range, in: &sections[index].fontSizes, style: "custom:\(roundedPointSize)")
     }
 
     @ViewBuilder
@@ -2771,8 +2766,32 @@ struct ProjectDetailView: View {
         customFontSizeValue = min(max(customFontSizeValue + delta, 8), 96)
     }
 
+    private func openCustomFontSizePopup() {
+        // Capture selection now — once the popup's TextField becomes first responder,
+        // the underlying UITextView's selectedRange goes to length 0 and we can no
+        // longer recover it on close.
+        if let activeID = activeSectionID,
+           let textView = textViews[activeID],
+           textView.selectedRange.length > 0 {
+            capturedFontSizeRange = textView.selectedRange
+            capturedFontSizeSectionID = activeID
+        } else {
+            capturedFontSizeRange = nil
+            capturedFontSizeSectionID = nil
+        }
+        customFontSizeValue = 25
+        showingCustomFontSizeSheet = true
+    }
+
     private func closeCustomFontSizePopup() {
-        applyTextFontSize(customFontSizeValue)
+        if let range = capturedFontSizeRange,
+           let sectionID = capturedFontSizeSectionID {
+            applyTextFontSize(customFontSizeValue, in: range, sectionID: sectionID)
+        } else {
+            applyTextFontSize(customFontSizeValue)
+        }
+        capturedFontSizeRange = nil
+        capturedFontSizeSectionID = nil
         showingCustomFontSizeSheet = false
     }
 

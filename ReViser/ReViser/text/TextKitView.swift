@@ -180,11 +180,27 @@ struct TextKitView: UIViewRepresentable {
             guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
 
             let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 25)
+            let pointSize = existingFont.pointSize
             let font: UIFont
-            if let design = style.uiKitDesign, let designedFont = existingFont.fontDescriptor.withDesign(design).flatMap({ UIFont(descriptor: $0, size: existingFont.pointSize) }) {
-                font = designedFont
-            } else {
-                font = UIFont.systemFont(ofSize: existingFont.pointSize)
+
+            switch style {
+            case .system:
+                font = UIFont.systemFont(ofSize: pointSize)
+            case .serif:
+                font = UIFont(name: "TimesNewRomanPSMT", size: pointSize)
+                    ?? UIFont.systemFont(ofSize: pointSize).fontDescriptor
+                        .withDesign(.serif)
+                        .flatMap { UIFont(descriptor: $0, size: pointSize) }
+                    ?? UIFont.systemFont(ofSize: pointSize)
+            case .rounded:
+                font = UIFont(name: "SFProRounded-Regular", size: pointSize)
+                    ?? UIFont(name: "AvenirNextRoundedPro-Regular", size: pointSize)
+                    ?? UIFont.systemFont(ofSize: pointSize).fontDescriptor
+                        .withDesign(.rounded)
+                        .flatMap { UIFont(descriptor: $0, size: pointSize) }
+                    ?? UIFont.systemFont(ofSize: pointSize)
+            case .monospaced:
+                font = UIFont.monospacedSystemFont(ofSize: pointSize, weight: .regular)
             }
 
             attributed.addAttribute(.font, value: font, range: nsRange)
