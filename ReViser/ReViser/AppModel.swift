@@ -2,8 +2,6 @@
 //  AppModel.swift
 //  ReViser
 //
-//  Created by Joey Tan on 2/9/26.
-//
 
 import SwiftUI
 import UniformTypeIdentifiers

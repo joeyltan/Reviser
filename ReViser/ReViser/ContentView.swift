@@ -2,8 +2,6 @@
 //  ContentView.swift
 //  ReViser
 //
-//  Created by Joey Tan on 4/2/26.
-//
 
 import SwiftUI
 
