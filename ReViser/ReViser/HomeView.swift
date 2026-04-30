@@ -302,12 +302,12 @@ struct CompareDraftsView: View {
             model.projects.first(where: { $0.id == id })
         }
 
-        let selectedText = comparisonText(for: selectedProject, mode: mode.wrappedValue)
+        let selectedAttr = comparisonAttributedText(for: selectedProject, mode: mode.wrappedValue)
         let comparedAgainstProject = comparedAgainstSlot?.projectID.flatMap { id in
             model.projects.first(where: { $0.id == id })
         }
-        let comparedAgainstText = comparedAgainstProject.map { baselineProject in
-            comparisonText(for: baselineProject, mode: comparedAgainstSlot?.mode ?? mode.wrappedValue)
+        let comparedAgainstAttr = comparedAgainstProject.map { baselineProject in
+            comparisonAttributedText(for: baselineProject, mode: comparedAgainstSlot?.mode ?? mode.wrappedValue)
         }
 
         VStack(alignment: .leading, spacing: 14) {
@@ -369,16 +369,15 @@ struct CompareDraftsView: View {
             ScrollView {
                 Group {
                     if selectedProject != nil {
-                        if showDraftDiff, !isBaseline, let comparedAgainstText {
-                            Text(diffAttributedText(from: comparedAgainstText, to: selectedText))
+                        if showDraftDiff, !isBaseline, let comparedAgainstAttr {
+                            Text(diffAttributedText(from: comparedAgainstAttr, to: selectedAttr))
                         } else {
-                            Text(verbatim: selectedText)
+                            Text(AttributedString(selectedAttr))
                         }
                     } else {
-                        Text(verbatim: selectedText)
+                        Text(AttributedString(selectedAttr))
                     }
                 }
-                .font(.system(size: 22))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
                 .padding(16)
@@ -399,22 +398,38 @@ struct CompareDraftsView: View {
         .padding(5)
     }
 
-    private func comparisonText(for project: AppModel.Project?, mode: DraftComparisonMode) -> String {
-        guard let project else { return "Choose a project to compare." }
+    private func comparisonAttributedText(for project: AppModel.Project?, mode: DraftComparisonMode, baseFontSize: CGFloat = 22) -> NSAttributedString {
+        let baseAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: baseFontSize),
+            .foregroundColor: UIColor.label
+        ]
 
-        let text: String
-        switch mode {
-        case .sectioned:
-            text = project.sections
-                .map { section in section.text }
-                .joined(separator: "\n────────────────────────────────\n")
-        case .unsectioned:
-            text = project.sections
-                .map { section in section.text }
-                .joined(separator: "")
+        guard let project else {
+            return NSAttributedString(string: "Choose a project to compare.", attributes: baseAttrs)
         }
 
-        return text.isEmpty ? "(Empty project)" : text
+        let separator: String
+        switch mode {
+        case .sectioned:
+            separator = "\n────────────────────────────────\n"
+        case .unsectioned:
+            separator = ""
+        }
+
+        let result = NSMutableAttributedString()
+        for (index, section) in project.sections.enumerated() {
+            if index > 0, !separator.isEmpty {
+                result.append(NSAttributedString(string: separator, attributes: baseAttrs))
+            }
+            let styled = SectionAttributedText.attributedString(for: section, baseFontSize: baseFontSize)
+            result.append(NSAttributedString(styled))
+        }
+
+        if result.length == 0 {
+            return NSAttributedString(string: "(Empty project)", attributes: baseAttrs)
+        }
+
+        return result
     }
 
     private enum DraftDiffOperation {
@@ -423,41 +438,69 @@ struct CompareDraftsView: View {
         case delete(String)
     }
 
-    private func diffAttributedText(from baseText: String, to targetText: String) -> AttributedString {
-        let baseSentences = sentenceChunks(in: baseText)
-        let targetSentences = sentenceChunks(in: targetText)
-        let operations = diffOperations(from: baseSentences, to: targetSentences)
+    private func diffAttributedText(from baseAttr: NSAttributedString, to targetAttr: NSAttributedString) -> AttributedString {
+        let baseText = baseAttr.string
+        let targetText = targetAttr.string
+        let baseChunks = sentenceChunks(in: baseText)
+        let targetChunks = sentenceChunks(in: targetText)
+        let operations = diffOperations(from: baseChunks, to: targetChunks)
         let result = NSMutableAttributedString()
+        var baseIdx = 0
+        var targetIdx = 0
         var index = 0
 
         while index < operations.count {
             switch operations[index] {
             case .equal(let token):
-                appendDiffToken(token, to: result)
+                let len = (token as NSString).length
+                if len > 0 {
+                    result.append(targetAttr.attributedSubstring(from: NSRange(location: targetIdx, length: len)))
+                }
+                baseIdx += len
+                targetIdx += len
                 index += 1
             case .delete(let baseChunk):
+                let baseLen = (baseChunk as NSString).length
                 if index + 1 < operations.count,
                    case .insert(let targetChunk) = operations[index + 1],
                    sentencesAreSimilar(baseChunk, targetChunk) {
-                    appendWordLevelDiff(from: baseChunk, to: targetChunk, into: result)
+                    let targetLen = (targetChunk as NSString).length
+                    appendWordLevelDiff(
+                        from: baseAttr,
+                        baseRange: NSRange(location: baseIdx, length: baseLen),
+                        to: targetAttr,
+                        targetRange: NSRange(location: targetIdx, length: targetLen),
+                        into: result
+                    )
+                    baseIdx += baseLen
+                    targetIdx += targetLen
                     index += 2
                 } else {
-                    appendDiffToken(
-                        baseChunk,
-                        to: result,
-                        foregroundColor: UIColor.systemRed,
-                        backgroundColor: UIColor.systemRed.withAlphaComponent(0.18),
-                        strikethrough: true
-                    )
+                    if baseLen > 0 {
+                        let sub = NSMutableAttributedString(attributedString: baseAttr.attributedSubstring(from: NSRange(location: baseIdx, length: baseLen)))
+                        applyDiffOverlay(
+                            to: sub,
+                            foregroundColor: UIColor.systemRed,
+                            backgroundColor: UIColor.systemRed.withAlphaComponent(0.18),
+                            strikethrough: true
+                        )
+                        result.append(sub)
+                    }
+                    baseIdx += baseLen
                     index += 1
                 }
             case .insert(let token):
-                appendDiffToken(
-                    token,
-                    to: result,
-                    foregroundColor: UIColor.systemGreen,
-                    backgroundColor: UIColor.systemGreen.withAlphaComponent(0.24)
-                )
+                let len = (token as NSString).length
+                if len > 0 {
+                    let sub = NSMutableAttributedString(attributedString: targetAttr.attributedSubstring(from: NSRange(location: targetIdx, length: len)))
+                    applyDiffOverlay(
+                        to: sub,
+                        foregroundColor: UIColor.systemGreen,
+                        backgroundColor: UIColor.systemGreen.withAlphaComponent(0.24)
+                    )
+                    result.append(sub)
+                }
+                targetIdx += len
                 index += 1
             }
         }
@@ -483,31 +526,79 @@ struct CompareDraftsView: View {
             .filter { !$0.isEmpty }
     }
 
-    private func appendWordLevelDiff(from baseText: String, to targetText: String, into attributedString: NSMutableAttributedString) {
-        let baseTokens = wordTokens(in: baseText)
-        let targetTokens = wordTokens(in: targetText)
+    private func appendWordLevelDiff(
+        from baseAttr: NSAttributedString,
+        baseRange: NSRange,
+        to targetAttr: NSAttributedString,
+        targetRange: NSRange,
+        into result: NSMutableAttributedString
+    ) {
+        let baseSubText = baseAttr.attributedSubstring(from: baseRange).string
+        let targetSubText = targetAttr.attributedSubstring(from: targetRange).string
+        let baseTokens = wordTokens(in: baseSubText)
+        let targetTokens = wordTokens(in: targetSubText)
         let operations = diffOperations(from: baseTokens, to: targetTokens)
+
+        var baseLocalIdx = 0
+        var targetLocalIdx = 0
 
         for operation in operations {
             switch operation {
             case .equal(let token):
-                appendDiffToken(token, to: attributedString)
+                let len = (token as NSString).length
+                if len > 0 {
+                    let absRange = NSRange(location: targetRange.location + targetLocalIdx, length: len)
+                    result.append(targetAttr.attributedSubstring(from: absRange))
+                }
+                baseLocalIdx += len
+                targetLocalIdx += len
             case .insert(let token):
-                appendDiffToken(
-                    token,
-                    to: attributedString,
-                    foregroundColor: UIColor.systemGreen,
-                    backgroundColor: UIColor.systemGreen.withAlphaComponent(0.24)
-                )
+                let len = (token as NSString).length
+                if len > 0 {
+                    let absRange = NSRange(location: targetRange.location + targetLocalIdx, length: len)
+                    let sub = NSMutableAttributedString(attributedString: targetAttr.attributedSubstring(from: absRange))
+                    applyDiffOverlay(
+                        to: sub,
+                        foregroundColor: UIColor.systemGreen,
+                        backgroundColor: UIColor.systemGreen.withAlphaComponent(0.24)
+                    )
+                    result.append(sub)
+                }
+                targetLocalIdx += len
             case .delete(let token):
-                appendDiffToken(
-                    token,
-                    to: attributedString,
-                    foregroundColor: UIColor.systemRed,
-                    backgroundColor: UIColor.systemRed.withAlphaComponent(0.18),
-                    strikethrough: true
-                )
+                let len = (token as NSString).length
+                if len > 0 {
+                    let absRange = NSRange(location: baseRange.location + baseLocalIdx, length: len)
+                    let sub = NSMutableAttributedString(attributedString: baseAttr.attributedSubstring(from: absRange))
+                    applyDiffOverlay(
+                        to: sub,
+                        foregroundColor: UIColor.systemRed,
+                        backgroundColor: UIColor.systemRed.withAlphaComponent(0.18),
+                        strikethrough: true
+                    )
+                    result.append(sub)
+                }
+                baseLocalIdx += len
             }
+        }
+    }
+
+    private func applyDiffOverlay(
+        to attr: NSMutableAttributedString,
+        foregroundColor: UIColor? = nil,
+        backgroundColor: UIColor? = nil,
+        strikethrough: Bool = false
+    ) {
+        let range = NSRange(location: 0, length: attr.length)
+        guard range.length > 0 else { return }
+        if let foregroundColor {
+            attr.addAttribute(.foregroundColor, value: foregroundColor, range: range)
+        }
+        if let backgroundColor {
+            attr.addAttribute(.backgroundColor, value: backgroundColor, range: range)
+        }
+        if strikethrough {
+            attr.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
         }
     }
 
@@ -531,29 +622,6 @@ struct CompareDraftsView: View {
 
         tokens.append(String(text[startIndex..<text.endIndex]))
         return tokens
-    }
-
-    private func appendDiffToken(
-        _ token: String,
-        to attributedString: NSMutableAttributedString,
-        foregroundColor: UIColor? = nil,
-        backgroundColor: UIColor? = nil,
-        strikethrough: Bool = false
-    ) {
-        guard !token.isEmpty else { return }
-
-        var attributes: [NSAttributedString.Key: Any] = [:]
-        if let foregroundColor {
-            attributes[.foregroundColor] = foregroundColor
-        }
-        if let backgroundColor {
-            attributes[.backgroundColor] = backgroundColor
-        }
-        if strikethrough {
-            attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-        }
-
-        attributedString.append(NSAttributedString(string: token, attributes: attributes))
     }
 
     private func sentenceChunks(in text: String) -> [String] {
