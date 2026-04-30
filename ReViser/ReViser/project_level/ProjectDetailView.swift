@@ -170,7 +170,7 @@ struct ProjectDetailView: View {
                         }
                     }
                 }
-                .confirmationDialog(
+                .alert(
                     parent.pendingNoteDeletionTitle,
                     isPresented: Binding(
                         get: { parent.pendingNoteDeletion != nil },
@@ -180,31 +180,28 @@ struct ProjectDetailView: View {
                             }
                         }
                     ),
-                    titleVisibility: .visible
-                ) {
-                    if let pending = parent.pendingNoteDeletion {
-                        switch pending {
-                        case .resolvedNote(let sectionID, let resolvedIndex):
-                            Button("Delete Note", role: .destructive) {
-                                parent.deleteResolvedNote(sectionID: sectionID, resolvedIndex: resolvedIndex)
-                                parent.pendingNoteDeletion = nil
-                            }
-
-                        case .clearAll(let sectionID):
-                            Button("Clear Notes", role: .destructive) {
-                                parent.clearAllNotes(in: sectionID)
-                                parent.pendingNoteDeletion = nil
-                            }
-                        }
-                    }
-
+                    presenting: parent.pendingNoteDeletion
+                ) { pending in
                     Button("Cancel", role: .cancel) {
                         parent.pendingNoteDeletion = nil
                     }
-                } message: {
+                    switch pending {
+                    case .resolvedNote(let sectionID, let resolvedIndex):
+                        Button("Delete Note", role: .destructive) {
+                            parent.deleteResolvedNote(sectionID: sectionID, resolvedIndex: resolvedIndex)
+                            parent.pendingNoteDeletion = nil
+                        }
+
+                    case .clearAll(let sectionID):
+                        Button("Clear Notes", role: .destructive) {
+                            parent.clearAllNotes(in: sectionID)
+                            parent.pendingNoteDeletion = nil
+                        }
+                    }
+                } message: { _ in
                     Text(parent.pendingNoteDeletionMessage)
                 }
-                .confirmationDialog(
+                .alert(
                     parent.pendingSectionDeletionTitle,
                     isPresented: Binding(
                         get: { parent.pendingSectionDeletion != nil },
@@ -214,22 +211,19 @@ struct ProjectDetailView: View {
                             }
                         }
                     ),
-                    titleVisibility: .visible
-                ) {
-                    if let pending = parent.pendingSectionDeletion {
-                        switch pending {
-                        case .section(let sectionID):
-                            Button("Delete Section", role: .destructive) {
-                                parent.deleteSection(id: sectionID)
-                                parent.pendingSectionDeletion = nil
-                            }
-                        }
-                    }
-
+                    presenting: parent.pendingSectionDeletion
+                ) { pending in
                     Button("Cancel", role: .cancel) {
                         parent.pendingSectionDeletion = nil
                     }
-                } message: {
+                    switch pending {
+                    case .section(let sectionID):
+                        Button("Delete Section", role: .destructive) {
+                            parent.deleteSection(id: sectionID)
+                            parent.pendingSectionDeletion = nil
+                        }
+                    }
+                } message: { _ in
                     Text(parent.pendingSectionDeletionMessage)
                 }
                 .alert("No filter match", isPresented: parent.$showingNoFilterMatchAlert) {
