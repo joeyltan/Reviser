@@ -200,6 +200,11 @@ class AppModel {
         sectionGraveyard.removeAll { $0.id == deletedID }
     }
 
+    func deleteProject(_ projectID: UUID) {
+        projects.removeAll { $0.id == projectID }
+        sectionGraveyard.removeAll { $0.projectID == projectID }
+    }
+
     /// Extracts text and inline style ranges from a .docx by unzipping and parsing word/document.xml.
     private func extractDocxImportResult(url: URL) async throws -> DocxImportResult {
         let archive: Archive

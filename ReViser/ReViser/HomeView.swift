@@ -6,6 +6,7 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @State private var showingImporter = false
     @State private var isLoading = false
+    @State private var projectPendingDeletion: AppModel.Project?
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -88,6 +89,13 @@ struct HomeView: View {
                                     .shadow(radius: 6, y: 2)
                                 }
                                 .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        projectPendingDeletion = project
+                                    } label: {
+                                        Label("Delete Project", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity)
@@ -117,8 +125,26 @@ struct HomeView: View {
                 break
             }
         }
+        .alert(
+            "Delete \(projectPendingDeletion?.title ?? "Project")?",
+            isPresented: Binding(
+                get: { projectPendingDeletion != nil },
+                set: { if !$0 { projectPendingDeletion = nil } }
+            ),
+            presenting: projectPendingDeletion
+        ) { project in
+            Button("Cancel", role: .cancel) {
+                projectPendingDeletion = nil
+            }
+            Button("Delete", role: .destructive) {
+                model.deleteProject(project.id)
+                projectPendingDeletion = nil
+            }
+        } message: { _ in
+            Text("This will permanently delete the project and all its sections. This cannot be undone.")
+        }
     }
-    
+
 }
 
 enum DraftComparisonMode: String, CaseIterable, Identifiable {
