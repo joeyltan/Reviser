@@ -1556,32 +1556,28 @@ struct ProjectDetailView: View {
                     .frame(width: 50, height: 50)
                     .background(
                         Circle()
-                            .fill(Color.secondary.opacity(0.12))
+                            .fill(visibleActionSectionIDs.contains(section.id)
+                                  ? Color.accentColor.opacity(0.18)
+                                  : Color.secondary.opacity(0.12))
                     )
                     .overlay(
                         Circle()
-                            .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                            .stroke(visibleActionSectionIDs.contains(section.id)
+                                    ? Color.accentColor.opacity(0.6)
+                                    : Color.secondary.opacity(0.25),
+                                    lineWidth: 1)
                     )
-
-                Button {
-                    if visibleActionSectionIDs.contains(section.id) {
-                        visibleActionSectionIDs.remove(section.id)
-                    } else {
-                        visibleActionSectionIDs.insert(section.id)
+                    .contentShape(Circle())
+                    .onLongPressGesture(minimumDuration: 0.4) {
+                        if visibleActionSectionIDs.contains(section.id) {
+                            visibleActionSectionIDs.remove(section.id)
+                        } else {
+                            visibleActionSectionIDs.insert(section.id)
+                        }
                     }
-                } label: { // consider changing ellipsis
-                    Image(systemName: visibleActionSectionIDs.contains(section.id) ? "chevron.up.circle" : "ellipsis.circle")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.secondary)
-                        .padding(6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.secondary.opacity(0.12))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help(visibleActionSectionIDs.contains(section.id) ? "Hide actions" : "Show actions")
-                .padding(.top, 6) // for spacing between the section number and tool buttons
+                    .help(visibleActionSectionIDs.contains(section.id)
+                          ? "Long-press to hide actions"
+                          : "Long-press for section actions")
 
                 if visibleActionSectionIDs.contains(section.id) {
                     VStack(spacing: 10) {
