@@ -378,6 +378,19 @@ struct ProjectDetailView: View {
         }
     }
 
+    func updateActiveSelection(sectionID: UUID, caret: Int, selectionLength: Int) {
+        let didChange =
+            activeSectionID != sectionID ||
+            caretIndexBySection[sectionID] != caret ||
+            selectedLengthBySection[sectionID] != selectionLength
+
+        guard didChange else { return }
+
+        activeSectionID = sectionID
+        caretIndexBySection[sectionID] = caret
+        selectedLengthBySection[sectionID] = selectionLength
+    }
+
     private var hasAnyTaggedContent: Bool {
         !usedTagsInProject().isEmpty
     }
@@ -1608,9 +1621,7 @@ struct ProjectDetailView: View {
                 textViews[section.id] = view
             },
             onSelectionChange: { caret, selectionLength in
-                activeSectionID = section.id
-                caretIndexBySection[section.id] = caret
-                selectedLengthBySection[section.id] = selectionLength
+                updateActiveSelection(sectionID: section.id, caret: caret, selectionLength: selectionLength)
             },
             calculatedHeight: Binding(
                 get: { sectionHeights[section.id] ?? 100 },
@@ -1974,9 +1985,7 @@ struct ProjectDetailView: View {
                         textViews[section.id] = view
                     },
                     onSelectionChange: { caret, selectionLength in
-                        activeSectionID = section.id
-                        caretIndexBySection[section.id] = caret
-                        selectedLengthBySection[section.id] = selectionLength
+                        updateActiveSelection(sectionID: section.id, caret: caret, selectionLength: selectionLength)
                     },
                     calculatedHeight: Binding(
                         get: { sectionHeights[section.id] ?? 100 },
@@ -3763,6 +3772,19 @@ struct SectionWindowCard: View {
 }
 
 struct TextKitView: UIViewRepresentable {
+    struct RenderState: Equatable {
+        var text: String
+        var highlightedSnippets: Set<String>
+        var textColors: [TextStyleRange]
+        var textHighlights: [TextStyleRange]
+        var textFontTypes: [TextStyleRange]
+        var textFontSizes: [TextStyleRange]
+        var textBoldStyles: [TextStyleRange]
+        var textItalicStyles: [TextStyleRange]
+        var textUnderlineStyles: [TextStyleRange]
+        var textStrikethroughStyles: [TextStyleRange]
+    }
+
     @Binding var text: String
     var highlightedSnippets: Set<String> = []
     var textColors: [TextStyleRange] = []
@@ -3781,6 +3803,21 @@ struct TextKitView: UIViewRepresentable {
     @Binding var calculatedHeight: CGFloat
     var onHighlightedSnippetAnchorsChange: (([String: [CGPoint]]) -> Void)? = nil
     var selectionMenuBuilder: (([UIMenuElement]) -> UIMenu?)? = nil
+
+    private var renderState: RenderState {
+        RenderState(
+            text: text,
+            highlightedSnippets: highlightedSnippets,
+            textColors: textColors,
+            textHighlights: textHighlights,
+            textFontTypes: textFontTypes,
+            textFontSizes: textFontSizes,
+            textBoldStyles: textBoldStyles,
+            textItalicStyles: textItalicStyles,
+            textUnderlineStyles: textUnderlineStyles,
+            textStrikethroughStyles: textStrikethroughStyles
+        )
+    }
 
     func makeUIView(context: Context) -> UITextView {
         let view = UITextView()
@@ -3809,25 +3846,40 @@ struct TextKitView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UITextView, context: Context) {
-        let selectedRange = uiView.selectedRange
-        uiView.attributedText = makeAttributedText(from: text)
+        let coordinator = context.coordinator
+        coordinator.parent = self
 
-        let clampedLocation = min(selectedRange.location, uiView.attributedText.length)
-        let maxLength = max(0, uiView.attributedText.length - clampedLocation)
-        let clampedLength = min(selectedRange.length, maxLength)
-        uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
+        let currentRenderState = renderState
+        let didChangeRenderedContent = coordinator.lastRenderState != currentRenderState
+        let didChangeWidth = coordinator.lastMeasuredWidth != uiView.bounds.width
+
+        if didChangeRenderedContent {
+            let selectedRange = uiView.selectedRange
+            uiView.attributedText = makeAttributedText(from: text)
+
+            let clampedLocation = min(selectedRange.location, uiView.attributedText.length)
+            let maxLength = max(0, uiView.attributedText.length - clampedLocation)
+            let clampedLength = min(selectedRange.length, maxLength)
+            uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
+            coordinator.lastRenderState = currentRenderState
+        }
 
 //        context.coordinator.splitMode = splitMode
 //        uiView.isEditable = true
 //        uiView.isSelectable = true
         
+        guard didChangeRenderedContent || didChangeWidth else { return }
+
         DispatchQueue.main.async {
             let newHeight = uiView.sizeThatFits(CGSize(width: uiView.bounds.width, height: .greatestFiniteMagnitude)).height
             if self.calculatedHeight != newHeight {
                 self.calculatedHeight = newHeight
             }
 
-            self.onHighlightedSnippetAnchorsChange?(self.computeSnippetAnchorPoints(in: uiView))
+            if didChangeRenderedContent || didChangeWidth {
+                self.onHighlightedSnippetAnchorsChange?(self.computeSnippetAnchorPoints(in: uiView))
+            }
+            coordinator.lastMeasuredWidth = uiView.bounds.width
         }
     }
 
@@ -4012,6 +4064,8 @@ struct TextKitView: UIViewRepresentable {
         var parent: TextKitView
         var textView: UITextView?
         var splitMode: Bool = false
+        var lastRenderState: RenderState?
+        var lastMeasuredWidth: CGFloat?
 
         init(_ parent: TextKitView) {
             self.parent = parent
@@ -4501,4 +4555,3 @@ struct SectionWindowPickerSheet: View {
         return String(trimmed.prefix(160))
     }
 }
-

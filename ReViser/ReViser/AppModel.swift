@@ -161,12 +161,12 @@ class AppModel {
     }
 
     func previewText(for project: Project, limit: Int = 200) -> String {
-        let sectionsText = project.sections
-            .map(\.text)
-            .joined(separator: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let source = sectionsText.isEmpty ? project.text : sectionsText
+        var collected = ""
+        for section in project.sections {
+            collected.append(section.text)
+            if collected.count >= limit * 2 { break }
+        }
+        let source = collected.isEmpty ? project.text : collected
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "(Empty project)" }
         return String(trimmed.prefix(limit))
