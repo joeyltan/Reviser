@@ -10,7 +10,13 @@ import SwiftUI
 @main
 struct ReViserApp: App {
 
-    @State private var appModel = AppModel()
+    @State private var appModel: AppModel = {
+        let model = AppModel()
+        #if DEBUG
+        UITestSupport.seedIfNeeded(model) // for testing purposes
+        #endif
+        return model
+    }()
 
     var body: some Scene {
         WindowGroup(id: "main-window") {

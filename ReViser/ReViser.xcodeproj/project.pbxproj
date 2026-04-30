@@ -20,12 +20,20 @@
 			remoteGlobalIDString = A60FDEBA2F7EF1F20093C279;
 			remoteInfo = ReViser;
 		};
+		A60FDF102F9A00000093C279 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A60FDEB32F7EF1F20093C279 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A60FDEBA2F7EF1F20093C279;
+			remoteInfo = ReViser;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A60FDEBB2F7EF1F20093C279 /* ReViser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ReViser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A60FDEBF2F7EF1F30093C279 /* RealityKitContent */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = RealityKitContent; sourceTree = "<group>"; };
 		A60FDECF2F7EF1F50093C279 /* ReViserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ReViserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A60FDF0A2F9A00000093C279 /* ReViserUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ReViserUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -52,6 +60,11 @@
 			path = ReViserTests;
 			sourceTree = "<group>";
 		};
+		A60FDF0B2F9A00000093C279 /* ReViserUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ReViserUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +85,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A60FDF0E2F9A00000093C279 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -81,6 +101,7 @@
 				A60FDEBD2F7EF1F20093C279 /* ReViser */,
 				A60FDEBE2F7EF1F30093C279 /* Packages */,
 				A60FDED22F7EF1F50093C279 /* ReViserTests */,
+				A60FDF0B2F9A00000093C279 /* ReViserUITests */,
 				A60FDEEA2F84A2060093C279 /* Frameworks */,
 				A60FDEBC2F7EF1F20093C279 /* Products */,
 			);
@@ -91,6 +112,7 @@
 			children = (
 				A60FDEBB2F7EF1F20093C279 /* ReViser.app */,
 				A60FDECF2F7EF1F50093C279 /* ReViserTests.xctest */,
+				A60FDF0A2F9A00000093C279 /* ReViserUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -161,6 +183,29 @@
 			productReference = A60FDECF2F7EF1F50093C279 /* ReViserTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		A60FDF0C2F9A00000093C279 /* ReViserUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A60FDF122F9A00000093C279 /* Build configuration list for PBXNativeTarget "ReViserUITests" */;
+			buildPhases = (
+				A60FDF0D2F9A00000093C279 /* Sources */,
+				A60FDF0E2F9A00000093C279 /* Frameworks */,
+				A60FDF0F2F9A00000093C279 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A60FDF112F9A00000093C279 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A60FDF0B2F9A00000093C279 /* ReViserUITests */,
+			);
+			name = ReViserUITests;
+			packageProductDependencies = (
+			);
+			productName = ReViserUITests;
+			productReference = A60FDF0A2F9A00000093C279 /* ReViserUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -175,6 +220,10 @@
 						CreatedOnToolsVersion = 26.2;
 					};
 					A60FDECE2F7EF1F50093C279 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = A60FDEBA2F7EF1F20093C279;
+					};
+					A60FDF0C2F9A00000093C279 = {
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = A60FDEBA2F7EF1F20093C279;
 					};
@@ -200,6 +249,7 @@
 			targets = (
 				A60FDEBA2F7EF1F20093C279 /* ReViser */,
 				A60FDECE2F7EF1F50093C279 /* ReViserTests */,
+				A60FDF0C2F9A00000093C279 /* ReViserUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -213,6 +263,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A60FDECD2F7EF1F50093C279 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60FDF0F2F9A00000093C279 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -236,6 +293,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A60FDF0D2F9A00000093C279 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -243,6 +307,11 @@
 			isa = PBXTargetDependency;
 			target = A60FDEBA2F7EF1F20093C279 /* ReViser */;
 			targetProxy = A60FDED02F7EF1F50093C279 /* PBXContainerItemProxy */;
+		};
+		A60FDF112F9A00000093C279 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A60FDEBA2F7EF1F20093C279 /* ReViser */;
+			targetProxy = A60FDF102F9A00000093C279 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -447,7 +516,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 7;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ReViser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ReViser";
-				XROS_DEPLOYMENT_TARGET = 26.2;
+				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Debug;
 		};
@@ -470,7 +539,51 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 7;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ReViser.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ReViser";
-				XROS_DEPLOYMENT_TARGET = 26.2;
+				XROS_DEPLOYMENT_TARGET = 2.0;
+			};
+			name = Release;
+		};
+		A60FDF132F9A00000093C279 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H26MV7ZBQB;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = cpsc4900.ReViserUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 7;
+				TEST_TARGET_NAME = ReViser;
+				XROS_DEPLOYMENT_TARGET = 2.0;
+			};
+			name = Debug;
+		};
+		A60FDF142F9A00000093C279 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H26MV7ZBQB;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = cpsc4900.ReViserUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 7;
+				TEST_TARGET_NAME = ReViser;
+				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Release;
 		};
@@ -500,6 +613,15 @@
 			buildConfigurations = (
 				A60FDEDC2F7EF1F50093C279 /* Debug */,
 				A60FDEDD2F7EF1F50093C279 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A60FDF122F9A00000093C279 /* Build configuration list for PBXNativeTarget "ReViserUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A60FDF132F9A00000093C279 /* Debug */,
+				A60FDF142F9A00000093C279 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

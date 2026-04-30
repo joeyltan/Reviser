@@ -3,6 +3,7 @@ import Testing
 import ZIPFoundation
 @testable import ReViser
 import UniformTypeIdentifiers
+import UIKit
 
 @Suite("ReViser")
 struct ReViserTests {
@@ -248,6 +249,75 @@ struct ReViserTests {
         #expect(result.strikethroughRanges == [TextStyleRange(location: 19, length: 6, style: "strikethrough")])
         #expect(result.highlightRanges.contains(TextStyleRange(location: 26, length: 3, style: "yellow")))
         #expect(result.highlightRanges.contains(TextStyleRange(location: 29, length: 6, style: "orange")))
+    }
+
+    @Test
+    func sectionTextTransformParagraphSlicesPreserveRanges() {
+        let text = "First\n\nSecond\n\n\nThird"
+        let slices = SectionTextTransform.paragraphSlices(in: text)
+        #expect(slices.count == 3)
+        #expect(slices[0].text == "First\n\n")
+        #expect(slices[1].text == "Second\n\n\n")
+        #expect(slices[2].text == "Third")
+
+        let nsText = text as NSString
+        for slice in slices {
+            #expect(nsText.substring(with: slice.range) == slice.text)
+        }
+    }
+
+    @Test
+    func sectionTextTransformClampSelectionRangeKeepsBounds() {
+        let clamped = SectionTextTransform.clampSelectionRange(NSRange(location: -2, length: 10), textLength: 5)
+        #expect(clamped.location == 0)
+        #expect(clamped.length == 5)
+
+        let empty = SectionTextTransform.clampSelectionRange(NSRange(location: 10, length: 2), textLength: 5)
+        #expect(empty.location == 5)
+        #expect(empty.length == 0)
+    }
+
+    @Test
+    func sectionTextTransformStyledSectionClipsStyles() {
+        let section = Section(
+            id: UUID(),
+            text: "Hello World",
+            notes: ["Note"],
+            resolvedNotes: ["Resolved"],
+            colors: [TextStyleRange(location: 6, length: 5, style: "red")],
+            highlights: [TextStyleRange(location: 0, length: 5, style: "yellow")]
+        )
+
+        let sliceRange = NSRange(location: 6, length: 5)
+        let result = SectionTextTransform.styledSection(
+            from: section,
+            text: "World",
+            sourceRange: sliceRange,
+            id: UUID()
+        )
+
+        #expect(result.notes.isEmpty)
+        #expect(result.resolvedNotes.isEmpty)
+        #expect(result.colors == [TextStyleRange(location: 0, length: 5, style: "red")])
+        #expect(result.highlights.isEmpty)
+    }
+
+    @Test
+    func draftDiffEngineDiffHighlightsInsertionsAndDeletions() {
+        let base = NSAttributedString(string: "Hello cruel world", attributes: [.font: UIFont.systemFont(ofSize: 14)])
+        let target = NSAttributedString(string: "Hello world", attributes: [.font: UIFont.systemFont(ofSize: 14)])
+        let diff = DraftDiffEngine.diffAttributedText(from: base, to: target)
+        let nsDiff = NSAttributedString(diff)
+        let range = (nsDiff.string as NSString).range(of: "cruel ")
+        #expect(range.location != NSNotFound)
+        let style = nsDiff.attribute(.strikethroughStyle, at: range.location, effectiveRange: nil) as? Int
+        #expect(style == NSUnderlineStyle.single.rawValue)
+
+        let insertedBase = NSAttributedString(string: "Hello world", attributes: [.font: UIFont.systemFont(ofSize: 14)])
+        let insertedTarget = NSAttributedString(string: "Hello brave world", attributes: [.font: UIFont.systemFont(ofSize: 14)])
+        let insertedDiff = DraftDiffEngine.diffAttributedText(from: insertedBase, to: insertedTarget)
+        let insertedString = NSAttributedString(insertedDiff).string
+        #expect(insertedString == "Hello brave world")
     }
 
     private func makeTemporaryFile(extension fileExtension: String, contents: String) throws -> URL {
