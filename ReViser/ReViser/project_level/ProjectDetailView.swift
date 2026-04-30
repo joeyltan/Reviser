@@ -46,13 +46,13 @@ struct ProjectDetailView: View {
     @State private var showingSectionWindowPickerSheet: Bool = false
     @State private var sectionWindowSelection: Set<UUID> = []
     @State private var sectionTags: [UUID: Set<String>] = [:]
-    @State private var taggedTextBySection: [UUID: [String: Set<String>]] = [:]
+    @State var taggedTextBySection: [UUID: [String: Set<String>]] = [:]
     @State private var customTagCategories: Set<String> = []
-    @State private var activeFilterTags: Set<String> = []
+    @State var activeFilterTags: Set<String> = []
     @State private var showFilteredTimeline: Bool = false
-    @State private var linkedTimelineFrames: [UUID: CGRect] = [:]
-    @State private var linkedTimelineTextViewFrames: [UUID: CGRect] = [:]
-    @State private var linkedTimelineSnippetPoints: [UUID: [String: [CGPoint]]] = [:]
+    @State var linkedTimelineFrames: [UUID: CGRect] = [:]
+    @State var linkedTimelineTextViewFrames: [UUID: CGRect] = [:]
+    @State var linkedTimelineSnippetPoints: [UUID: [String: [CGPoint]]] = [:]
     @State private var showingNoFilterMatchAlert: Bool = false
     @State private var showingNewTagAlert: Bool = false
     @State private var newTagName: String = ""
@@ -1134,7 +1134,7 @@ struct ProjectDetailView: View {
         }
     }
 
-    private func displayedSectionsForCurrentFilters() -> [Section] {
+    func displayedSectionsForCurrentFilters() -> [Section] {
         let filteredSections = sections.filter { section in
             let tagsForSection = allTags(for: section.id)
             return activeFilterTags.isEmpty || activeFilterTags.isSubset(of: tagsForSection)
@@ -1147,227 +1147,14 @@ struct ProjectDetailView: View {
         return filteredSections.isEmpty ? sections : filteredSections
     }
 
-    @ViewBuilder
-    private func linkedTimelineView() -> some View {
-        let displayedSections = displayedSectionsForCurrentFilters()
-        let textPointsByTag = linkedTimelineTextPointsByTag(displayedSections: displayedSections)
-        let timelineAvailableTags = filterableTags()
-
-        if displayedSections.isEmpty {
-            Text("(Empty project)")
-                .font(.system(size: 24))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
-                .padding(24)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color(.secondarySystemBackground))
-                )
-        } else {
-            GeometryReader { proxy in
-                let panelWidth: CGFloat = 260
-                let contentSpacing: CGFloat = 20
-                let canvasWidth = max(proxy.size.width - panelWidth - contentSpacing, 620)
-                let columns = timelineColumnCount(for: canvasWidth)
-                let gridItems = Array(
-                    repeating: GridItem(.flexible(minimum: 360, maximum: 520), spacing: 28),
-                    count: columns
-                )
-
-                ScrollView([.vertical, .horizontal]) {
-                    HStack(alignment: .top, spacing: contentSpacing) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Linked timeline")
-                                        .font(.headline)
-                                    Text("Shows section links plus tag-based text links. Use the panel to filter by tags.")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                Text("\(displayedSections.count) sections")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        Capsule().fill(Color.secondary.opacity(0.10))
-                                    )
-                            }
-                            .padding(.horizontal, 24)
-                            .padding(.top, 8)
-
-                            ZStack(alignment: .topLeading) {
-                                Canvas { context, _ in
-                                    func addSeparatedCurve(
-                                        _ path: inout Path,
-                                        from startPoint: CGPoint,
-                                        to endPoint: CGPoint,
-                                        offset: CGFloat
-                                    ) {
-                                        let sharedControlX = max(startPoint.x, endPoint.x) + offset
-
-                                        path.move(to: startPoint)
-                                        path.addCurve(
-                                            to: endPoint,
-                                            control1: CGPoint(x: sharedControlX, y: startPoint.y),
-                                            control2: CGPoint(x: sharedControlX, y: endPoint.y)
-                                        )
-                                    }
-
-                                    if displayedSections.count > 1 {
-                                        for (pairIndex, pair) in zip(displayedSections, displayedSections.dropFirst()).enumerated() {
-                                            guard let startFrame = linkedTimelineFrames[pair.0.id],
-                                                  let endFrame = linkedTimelineFrames[pair.1.id] else { continue }
-
-                                            let startPoint = CGPoint(x: startFrame.minX, y: startFrame.minY)
-                                            let endPoint = CGPoint(x: endFrame.minX, y: endFrame.minY)
-                                            let sectionOffset = 26 + CGFloat(pairIndex % 4) * 10
-
-                                            let startSectionTags = sectionLevelTags(for: pair.0.id)
-                                            let endSectionTags = sectionLevelTags(for: pair.1.id)
-                                            let sharedSectionTags = startSectionTags.intersection(endSectionTags)
-
-                                            let preferredTag =
-                                                activeFilterTags.sorted().first(where: { sharedSectionTags.contains($0) }) ??
-                                                sharedSectionTags.sorted().first ??
-                                                activeFilterTags.sorted().first(where: { startSectionTags.contains($0) || endSectionTags.contains($0) }) ??
-                                                startSectionTags.union(endSectionTags).sorted().first
-
-                                            let sectionLinkColor = preferredTag.map { colorForTag($0).opacity(0.65) } ?? Color.blue.opacity(0.35)
-
-                                            var sectionPath = Path()
-                                            addSeparatedCurve(&sectionPath, from: startPoint, to: endPoint, offset: sectionOffset)
-
-                                            context.stroke(
-                                                sectionPath,
-                                                with: .color(sectionLinkColor),
-                                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round, dash: [8, 6])
-                                            )
-                                        }
-                                    }
-
-                                    let orderedTags = textPointsByTag.keys.sorted()
-
-                                    for (tagIndex, tag) in orderedTags.enumerated() {
-                                        guard let points = textPointsByTag[tag], points.count > 1 else { continue }
-
-                                        let textOffset = 18 + CGFloat(tagIndex % 6) * 8
-                                        var textPath = Path()
-
-                                        for pair in zip(points, points.dropFirst()) {
-                                            let startPoint = pair.0
-                                            let endPoint = pair.1
-
-                                            addSeparatedCurve(&textPath, from: startPoint, to: endPoint, offset: textOffset)
-                                        }
-
-                                        context.stroke(
-                                            textPath,
-                                            with: .color(colorForTag(tag).opacity(0.80)),
-                                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                                        )
-                                    }
-                                }
-                                .allowsHitTesting(false)
-
-                                LazyVGrid(columns: gridItems, alignment: .leading, spacing: 28) {
-                                    ForEach(displayedSections, id: \.id) { section in
-                                        timelineCardView(section: section)
-                                            .background(
-                                                GeometryReader { proxy in
-                                                    Color.clear.preference(
-                                                        key: LinkedTimelineFramePreferenceKey.self,
-                                                        value: [LinkedTimelineFrame(id: section.id, frame: proxy.frame(in: .named("linkedTimelineCanvas")))]
-                                                    )
-                                                }
-                                            )
-                                    }
-                                }
-                            }
-                            .coordinateSpace(name: "linkedTimelineCanvas")
-                            .padding(24)
-                            .background(
-                                RoundedRectangle(cornerRadius: 28)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color(.secondarySystemBackground), Color(.secondarySystemBackground).opacity(0.96)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 28)
-                                    .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
-                            )
-                        }
-                        .frame(width: canvasWidth, alignment: .leading)
-                        .padding(.leading, 24)
-                        .padding(.bottom, 24)
-
-                        timelineTagFilterPanel(availableTags: timelineAvailableTags)
-                            .frame(width: panelWidth)
-                            .padding(.trailing, 24)
-                            .padding(.top, 12)
-                    }
-                }
-                .onPreferenceChange(LinkedTimelineFramePreferenceKey.self) { frames in
-                    linkedTimelineFrames = Dictionary(uniqueKeysWithValues: frames.map { ($0.id, $0.frame) })
-                }
-                .onPreferenceChange(LinkedTimelineTextViewFramePreferenceKey.self) { frames in
-                    linkedTimelineTextViewFrames = Dictionary(uniqueKeysWithValues: frames.map { ($0.id, $0.frame) })
-                }
-            }
-        }
-    }
-
-    private func linkedTimelineTextPointsByTag(displayedSections: [Section]) -> [String: [CGPoint]] {
-        var pointsByTag: [String: [(Int, CGPoint)]] = [:]
-
-        for (sectionIndex, section) in displayedSections.enumerated() {
-            guard let textFrame = linkedTimelineTextViewFrames[section.id],
-                  let snippetPoints = linkedTimelineSnippetPoints[section.id],
-                  let taggedSnippets = taggedTextBySection[section.id] else { continue }
-
-            for (snippet, tags) in taggedSnippets {
-                guard let points = snippetPoints[snippet], !points.isEmpty else { continue }
-
-                for point in points {
-                    let canvasPoint = CGPoint(x: textFrame.minX + point.x, y: textFrame.minY + point.y)
-                    for tag in tags {
-                        if !activeFilterTags.isEmpty && !activeFilterTags.contains(tag) {
-                            continue
-                        }
-                        pointsByTag[tag, default: []].append((sectionIndex, canvasPoint))
-                    }
-                }
-            }
-        }
-
-        return pointsByTag.mapValues { entries in
-            entries
-                .sorted { lhs, rhs in
-                    if lhs.0 == rhs.0 {
-                        return lhs.1.y < rhs.1.y
-                    }
-                    return lhs.0 < rhs.0
-                }
-                .map { $0.1 }
-        }
-    }
-
-    private func colorForTag(_ tag: String) -> Color {
+    func colorForTag(_ tag: String) -> Color {
         let scalarSum = tag.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         let hue = Double(scalarSum % 360) / 360.0
         return Color(hue: hue, saturation: 0.78, brightness: 0.95)
     }
 
     @ViewBuilder
-    private func timelineTagFilterPanel(availableTags: [String]) -> some View {
+    func timelineTagFilterPanel(availableTags: [String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Timeline filters")
                 .font(.headline)
@@ -1441,7 +1228,7 @@ struct ProjectDetailView: View {
         )
     }
 
-    private func timelineColumnCount(for width: CGFloat) -> Int {
+    func timelineColumnCount(for width: CGFloat) -> Int {
         let availableWidth = max(width - 72, 360)
         let preferredColumns = Int(availableWidth / 460)
         return min(max(preferredColumns, 1), 3)
@@ -1452,7 +1239,7 @@ struct ProjectDetailView: View {
     }
 
     @ViewBuilder
-    private func timelineCardView(section: Section) -> some View {
+    func timelineCardView(section: Section) -> some View {
         let sectionNumber = originalSectionIndex(for: section.id) + 1
         let sectionLevelTagSet = sectionLevelTags(for: section.id)
         let textLevelTagSet = textLevelTags(for: section.id)
@@ -1622,157 +1409,6 @@ struct ProjectDetailView: View {
             : project.sections
     }
 
-    private func restitchedManuscriptAttributedString() -> AttributedString {
-        let renderedSections = sections.isEmpty ? [Section(id: UUID(), text: "(Empty project)")] : sections
-        let combined = NSMutableAttributedString()
-
-        for (index, section) in renderedSections.enumerated() {
-            let sectionAttributed = NSMutableAttributedString(string: section.text)
-            let fullRange = NSRange(location: 0, length: (section.text as NSString).length)
-            sectionAttributed.addAttributes([
-                .font: UIFont.systemFont(ofSize: 24),
-                .foregroundColor: UIColor.label
-            ], range: fullRange)
-
-            applyRestitchedInlineStyles(
-                to: sectionAttributed,
-                text: section.text,
-                colors: section.colors,
-                highlights: section.highlights,
-                fontTypes: section.fontTypes,
-                fontSizes: section.fontSizes,
-                boldStyles: section.boldStyles,
-                italicStyles: section.italicStyles,
-                underlineStyles: section.underlineStyles,
-                strikethroughStyles: section.strikethroughStyles
-            )
-
-            combined.append(sectionAttributed)
-
-            if index < renderedSections.count - 1 {
-                combined.append(NSAttributedString(string: "\n"))
-            }
-        }
-
-        if combined.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return AttributedString("(Empty project)")
-        }
-
-        return AttributedString(combined)
-    }
-
-    private func applyRestitchedInlineStyles(
-        to attributed: NSMutableAttributedString,
-        text: String,
-        colors: [TextStyleRange],
-        highlights: [TextStyleRange],
-        fontTypes: [TextStyleRange],
-        fontSizes: [TextStyleRange],
-        boldStyles: [TextStyleRange],
-        italicStyles: [TextStyleRange],
-        underlineStyles: [TextStyleRange],
-        strikethroughStyles: [TextStyleRange]
-    ) {
-        applyRestitchedColorStyles(to: attributed, text: text, colors: colors)
-        applyRestitchedHighlightStyles(to: attributed, text: text, highlights: highlights)
-        applyRestitchedFontTypeStyles(to: attributed, text: text, fontTypes: fontTypes)
-        applyRestitchedFontSizeStyles(to: attributed, text: text, fontSizes: fontSizes)
-        applyRestitchedFontTraitStyles(to: attributed, text: text, ranges: boldStyles, trait: .traitBold)
-        applyRestitchedFontTraitStyles(to: attributed, text: text, ranges: italicStyles, trait: .traitItalic)
-        
-
-        let textLength = (text as NSString).length
-
-        for range in underlineStyles {
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
-        }
-
-        for range in strikethroughStyles {
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: nsRange)
-        }
-    }
-
-    private func applyRestitchedColorStyles(to attributed: NSMutableAttributedString, text: String, colors: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in colors {
-            guard let style = ProjectDetailView.TextColorStyle(rawValue: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.foregroundColor, value: style.uiColor, range: nsRange)
-        }
-    }
-
-    private func applyRestitchedHighlightStyles(to attributed: NSMutableAttributedString, text: String, highlights: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in highlights {
-            guard let style = ProjectDetailView.TextHighlightStyle(rawValue: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-            attributed.addAttribute(.backgroundColor, value: style.uiColor, range: nsRange)
-        }
-    }
-
-    private func applyRestitchedFontTypeStyles(to attributed: NSMutableAttributedString, text: String, fontTypes: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in fontTypes {
-            guard let style = ProjectDetailView.TextFontTypeStyle(rawValue: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-
-            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 24)
-            let font: UIFont
-            if let design = style.uiKitDesign,
-               let designedDescriptor = existingFont.fontDescriptor.withDesign(design) {
-                font = UIFont(descriptor: designedDescriptor, size: existingFont.pointSize)
-            } else {
-                font = UIFont.systemFont(ofSize: existingFont.pointSize)
-            }
-
-            attributed.addAttribute(.font, value: font, range: nsRange)
-        }
-    }
-
-    private func applyRestitchedFontSizeStyles(to attributed: NSMutableAttributedString, text: String, fontSizes: [TextStyleRange]) {
-        let textLength = (text as NSString).length
-
-        for range in fontSizes {
-            guard let pointSize = ProjectDetailView.TextFontSizeStyle.pointSize(for: range.style) else { continue }
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-
-            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 24)
-            attributed.addAttribute(.font, value: existingFont.withSize(pointSize), range: nsRange)
-        }
-    }
-
-    private func applyRestitchedFontTraitStyles(
-        to attributed: NSMutableAttributedString,
-        text: String,
-        ranges: [TextStyleRange],
-        trait: UIFontDescriptor.SymbolicTraits
-    ) {
-        let textLength = (text as NSString).length
-
-        for range in ranges {
-            let nsRange = range.nsRange
-            guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= textLength else { continue }
-
-            let existingFont = attributed.attribute(.font, at: nsRange.location, effectiveRange: nil) as? UIFont ?? UIFont.systemFont(ofSize: 24)
-            let combinedTraits = existingFont.fontDescriptor.symbolicTraits.union(trait)
-            if let descriptor = existingFont.fontDescriptor.withSymbolicTraits(combinedTraits) {
-                let font = UIFont(descriptor: descriptor, size: existingFont.pointSize)
-                attributed.addAttribute(.font, value: font, range: nsRange)
-            }
-        }
-    }
-
     @ViewBuilder
     private func restitchedManuscriptView(project: AppModel.Project) -> some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1808,7 +1444,7 @@ struct ProjectDetailView: View {
             }
 
             ScrollView {
-                let manuscriptAttributedText = restitchedManuscriptAttributedString()
+                let manuscriptAttributedText = RestitchedManuscriptRenderer.attributedString(from: sections)
                 Text(manuscriptAttributedText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
@@ -2319,7 +1955,7 @@ struct ProjectDetailView: View {
         let text = sections[index].text
         let sourceSection = sections[index]
         let nsText = text as NSString
-        let selectedRange = clampSelectionRange(textView.selectedRange, textLength: nsText.length)
+        let selectedRange = SectionTextTransform.clampSelectionRange(textView.selectedRange, textLength: nsText.length)
 
         let first = nsText.substring(to: selectedRange.location)
         let middle = selectedRange.length > 0 ? nsText.substring(with: selectedRange) : ""
@@ -2344,17 +1980,17 @@ struct ProjectDetailView: View {
         let secondSectionID = second.isEmpty ? nil : UUID()
 
         if let firstSectionID {
-            sections.insert(styledSection(from: sourceSection, text: first, sourceRange: NSRange(location: 0, length: selectedRange.location), id: firstSectionID), at: index)
+            sections.insert(SectionTextTransform.styledSection(from: sourceSection, text: first, sourceRange: NSRange(location: 0, length: selectedRange.location), id: firstSectionID), at: index)
             insertedSectionIDs.append(firstSectionID)
         }
 
         if let middleSectionID {
-            sections.insert(styledSection(from: sourceSection, text: middle, sourceRange: selectedRange, id: middleSectionID), at: index + insertedSectionIDs.count)
+            sections.insert(SectionTextTransform.styledSection(from: sourceSection, text: middle, sourceRange: selectedRange, id: middleSectionID), at: index + insertedSectionIDs.count)
             insertedSectionIDs.append(middleSectionID)
         }
 
         if let secondSectionID {
-            sections.insert(styledSection(from: sourceSection, text: second, sourceRange: NSRange(location: selectedRange.location + selectedRange.length, length: nsText.length - (selectedRange.location + selectedRange.length)), id: secondSectionID), at: index + insertedSectionIDs.count)
+            sections.insert(SectionTextTransform.styledSection(from: sourceSection, text: second, sourceRange: NSRange(location: selectedRange.location + selectedRange.length, length: nsText.length - (selectedRange.location + selectedRange.length)), id: secondSectionID), at: index + insertedSectionIDs.count)
             insertedSectionIDs.append(secondSectionID)
         }
 
@@ -2406,12 +2042,6 @@ struct ProjectDetailView: View {
         }
     }
 
-    private func clampSelectionRange(_ range: NSRange, textLength: Int) -> NSRange {
-        let clampedLocation = min(max(range.location, 0), textLength)
-        let clampedLength = min(max(range.length, 0), textLength - clampedLocation)
-        return NSRange(location: clampedLocation, length: clampedLength)
-    }
-
     func sectionWholeDocumentByParagraphs() {
         guard !sections.isEmpty else { return }
 
@@ -2419,7 +2049,7 @@ struct ProjectDetailView: View {
         var rebuiltSections: [Section] = []
 
         for section in currentSections {
-            let paragraphSlices = paragraphSlices(in: section.text)
+            let paragraphSlices = SectionTextTransform.paragraphSlices(in: section.text)
 
             if paragraphSlices.isEmpty {
                 rebuiltSections.append(Section(id: UUID(), text: ""))
@@ -2428,7 +2058,7 @@ struct ProjectDetailView: View {
 
             for (paragraphIndex, paragraphSlice) in paragraphSlices.enumerated() {
                 let isPrimaryParagraph = paragraphIndex == 0
-                let paragraphSection = styledSection(
+                let paragraphSection = SectionTextTransform.styledSection(
                     from: section,
                     text: paragraphSlice.text,
                     sourceRange: paragraphSlice.range,
@@ -2479,48 +2109,6 @@ struct ProjectDetailView: View {
         linkedTimelineSnippetPoints.removeAll()
     }
     
-    private func offsetRanges(_ ranges: [TextStyleRange], by delta: Int) -> [TextStyleRange] {
-        guard delta != 0 else { return ranges }
-        return ranges.map { TextStyleRange(location: $0.location + delta, length: $0.length, style: $0.style) }
-    }
-
-    private func clippedRanges(_ ranges: [TextStyleRange], in sourceRange: NSRange) -> [TextStyleRange] {
-        let sourceStart = sourceRange.location
-        let sourceEnd = sourceRange.location + sourceRange.length
-
-        return ranges.compactMap { range in
-            let rangeStart = range.location
-            let rangeEnd = range.location + range.length
-            let clippedStart = max(rangeStart, sourceStart)
-            let clippedEnd = min(rangeEnd, sourceEnd)
-
-            guard clippedEnd > clippedStart else { return nil }
-
-            return TextStyleRange(
-                location: clippedStart - sourceStart,
-                length: clippedEnd - clippedStart,
-                style: range.style
-            )
-        }
-    }
-
-    private func styledSection(from section: Section, text: String, sourceRange: NSRange, id: UUID) -> Section {
-        Section(
-            id: id,
-            text: text,
-            notes: sourceRange.location == 0 ? section.notes : [],
-            resolvedNotes: sourceRange.location == 0 ? section.resolvedNotes : [],
-            colors: clippedRanges(section.colors, in: sourceRange),
-            highlights: clippedRanges(section.highlights, in: sourceRange),
-            fontTypes: clippedRanges(section.fontTypes, in: sourceRange),
-            fontSizes: clippedRanges(section.fontSizes, in: sourceRange),
-            boldStyles: clippedRanges(section.boldStyles, in: sourceRange),
-            italicStyles: clippedRanges(section.italicStyles, in: sourceRange),
-            underlineStyles: clippedRanges(section.underlineStyles, in: sourceRange),
-            strikethroughStyles: clippedRanges(section.strikethroughStyles, in: sourceRange)
-        )
-    }
-
     func rejoinWithNextSection() {
         guard let currentID = activeSectionID,
               let currentIndex = sections.firstIndex(where: { $0.id == currentID }),
@@ -2546,14 +2134,14 @@ struct ProjectDetailView: View {
         current.resolvedNotes.append(contentsOf: next.resolvedNotes)
 
         // Merge styled ranges (offset next ranges by joinOffset)
-        current.colors.append(contentsOf: offsetRanges(next.colors, by: joinOffset))
-        current.highlights.append(contentsOf: offsetRanges(next.highlights, by: joinOffset))
-        current.fontTypes.append(contentsOf: offsetRanges(next.fontTypes, by: joinOffset))
-        current.fontSizes.append(contentsOf: offsetRanges(next.fontSizes, by: joinOffset))
-        current.boldStyles.append(contentsOf: offsetRanges(next.boldStyles, by: joinOffset))
-        current.italicStyles.append(contentsOf: offsetRanges(next.italicStyles, by: joinOffset))
-        current.underlineStyles.append(contentsOf: offsetRanges(next.underlineStyles, by: joinOffset))
-        current.strikethroughStyles.append(contentsOf: offsetRanges(next.strikethroughStyles, by: joinOffset))
+        current.colors.append(contentsOf: SectionTextTransform.offsetRanges(next.colors, by: joinOffset))
+        current.highlights.append(contentsOf: SectionTextTransform.offsetRanges(next.highlights, by: joinOffset))
+        current.fontTypes.append(contentsOf: SectionTextTransform.offsetRanges(next.fontTypes, by: joinOffset))
+        current.fontSizes.append(contentsOf: SectionTextTransform.offsetRanges(next.fontSizes, by: joinOffset))
+        current.boldStyles.append(contentsOf: SectionTextTransform.offsetRanges(next.boldStyles, by: joinOffset))
+        current.italicStyles.append(contentsOf: SectionTextTransform.offsetRanges(next.italicStyles, by: joinOffset))
+        current.underlineStyles.append(contentsOf: SectionTextTransform.offsetRanges(next.underlineStyles, by: joinOffset))
+        current.strikethroughStyles.append(contentsOf: SectionTextTransform.offsetRanges(next.strikethroughStyles, by: joinOffset))
 
         // Apply merged current back into sections and remove next
         sections[currentIndex] = current
@@ -2604,63 +2192,6 @@ struct ProjectDetailView: View {
 
         // Keep focus on the merged section
         activeSectionID = currentID
-    }
-
-    private func paragraphSlices(in text: String) -> [(text: String, range: NSRange)] {
-        let nsText = text as NSString
-        var slices: [(text: String, range: NSRange)] = []
-        var currentParagraph = ""
-        var separatorRun = ""
-        var separatorStart: Int?
-        var paragraphStart: Int?
-        var hasParagraphContent = false
-        var index = 0
-
-        while index < nsText.length {
-            let lineRange = nsText.lineRange(for: NSRange(location: index, length: 0))
-            let lineText = nsText.substring(with: lineRange)
-            let isBlank = lineText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-
-            if isBlank {
-                if !hasParagraphContent && separatorStart == nil {
-                    separatorStart = lineRange.location
-                }
-                separatorRun += lineText
-            } else {
-                if !hasParagraphContent {
-                    paragraphStart = separatorStart ?? lineRange.location
-                    currentParagraph = separatorRun + lineText
-                    separatorRun = ""
-                    separatorStart = nil
-                    hasParagraphContent = true
-                } else if !separatorRun.isEmpty {
-                    if let start = paragraphStart {
-                        let length = (currentParagraph as NSString).length + (separatorRun as NSString).length
-                        slices.append((currentParagraph + separatorRun, NSRange(location: start, length: length)))
-                    }
-                    paragraphStart = lineRange.location
-                    currentParagraph = lineText
-                    separatorRun = ""
-                    separatorStart = nil
-                } else {
-                    currentParagraph += lineText
-                }
-            }
-
-            index = lineRange.location + lineRange.length
-        }
-
-        if hasParagraphContent {
-            if let start = paragraphStart {
-                let length = (currentParagraph as NSString).length + (separatorRun as NSString).length
-                slices.append((currentParagraph + separatorRun, NSRange(location: start, length: length)))
-            }
-        } else if !separatorRun.isEmpty {
-            let start = separatorStart ?? 0
-            slices.append((separatorRun, NSRange(location: start, length: (separatorRun as NSString).length)))
-        }
-
-        return slices
     }
 
     func undoLastProjectChange() {
