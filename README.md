@@ -4,11 +4,11 @@ Many commercial tools exist to support creative writers in their writing endeavo
 
 Features that ReViser supports include:
 
-Splitting a Google Doc / Microsoft Word / other text file into section indicated by the writer
-	- Organizing split sections in space (where in a matrix-like layout or freehand)
-	- Be able to make notes / comments on any section of a writer's choice
-	- Be able to delete sections, move them around, swap with other sections in different spaces, or archive them into a ``graveyard"
-	- Compare multiple draft versions side by side
-	- Be able to splice back together the cut up manuscript back into a regular scrollable document  
-	- Be able to tag sections based on a certain layer of connection (through some writing throughline element) and see / edit just a particular layer's sections, as well as view visually how they are linked
-	- Include basic styling and text formatting capabilities, like bold, italics, strike through, indentation, font size, type, etc.
+	-> Splitting a Google Doc / Microsoft Word / other text file into section indicated by the writer
+	-> Organizing split sections in space (where in a matrix-like layout or freehand)
+	-> Be able to make notes / comments on any section of a writer's choice
+	-> Be able to delete sections, move them around, swap with other sections in different spaces, or archive them into a "graveyard"
+	-> Compare multiple draft versions side by side
+	-> Be able to splice back together the cut up manuscript back into a regular scrollable document  
+	-> Be able to tag sections based on a certain layer of connection (through some writing throughline element) and see / edit just a particular layer's sections, as well as view visually how they are linked
+	-> Include basic styling and text formatting capabilities, like bold, italics, strike through, indentation, font size, type, etc.
